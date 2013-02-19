@@ -1,0 +1,42 @@
+run_test_masers
+	numpy
+	pylab
+	IRDC3
+	ParseDS9Contour
+	BlueStarDistances
+	atpy
+	Maser
+IRDC3
+	astLib
+	urllib2
+	pyfits
+	scipy
+completeness
+	sextractor
+	montage
+	coord
+	calibrate_ukidss
+calibrate_ukidss
+make_images
+	aplpy
+	numdisplay.zscale
+reproject_map
+	subprocess
+
+Current Workflow
+
+run_test_masers.py -> Make Maser Object (to store information)
+		   -> Make IRDC3 Object (in charge of fetching and loading NIR data) <-- A much simpler class can handle this information
+		   -> Parse DS9 Contour <-- But where is the contour generated? Maybe it was by hand? This should not be too hard to fix.
+			-> IRDC3.findStarsInContour
+			-> IRDC3.countBlueStarsInContour
+		   -> BlueStarDistances
+		   -> Save to Masers.pkl
+Separately, we must run completeness.py
+		-> calibrate_ukidss.py
+We need to plot
+		-> plotcompleteness.py
+Separately, we need to run
+		-> make_images.py
+
+Sextractor is install in scisoft. Fine. But if I load scisoft my python environment is clobbered, so I can't use it.
