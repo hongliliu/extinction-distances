@@ -47,9 +47,9 @@ from scipy.interpolate import interp1d
 from collections import defaultdict
 
 #These are my programs
-from completeness import determine_ukidss_zp #does what it says
-from completeness import determine_completeness
-from distance import determine_distance
+from extinction_distance.completeness import determine_ukidss_zp #does what it says
+from extinction_distance.completeness import determine_completeness
+from extinction_distance.distance import determine_distance
 
 #These are more complicated additions
 #We can probably rewrite things to lose astLib
@@ -61,7 +61,7 @@ import astLib.astWCS
 import astLib.astImages as ai
 import sextractor
 import montage
-import coord
+from extinction_distance.support import coord
 import numdisplay.zscale
 import ds9
 
