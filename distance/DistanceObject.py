@@ -42,15 +42,14 @@ import aplpy
 import pyfits
 import matplotlib.pyplot as plt #Just for contouring
 import pylab #Redundant
-import matplotlib.nxutils as nx
 from scipy.interpolate import UnivariateSpline,krogh_interpolate
 from scipy.interpolate import interp1d
 from collections import defaultdict
 
 #These are my programs
-import determine_ukidss_zp #does what it says
-import determine_completeness
-import determine_distance
+from completeness import determine_ukidss_zp #does what it says
+from completeness import determine_completeness
+from distance import determine_distance
 
 #These are more complicated additions
 #We can probably rewrite things to lose astLib
@@ -300,6 +299,8 @@ class DistanceObject():
         down random points in the area and seeing which ones are inside
         the contour.
         """
+        # because nxutils is mpl>1.2, include it here to reduce chance of crash on import
+        import matplotlib.nxutils as nx
         f = open(os.path.join(region_name+"_data",region_name+".reg"),'r')
         current_poly = []
         all_poly = []
@@ -409,6 +410,7 @@ class DistanceObject():
         the contour of the cloud.
         """
 
+        import matplotlib.nxutils as nx
         verts = np.array(contour,float)
         if survey == "2MASS":
             points = np.column_stack((self.twomass.L,self.twomass.B))
