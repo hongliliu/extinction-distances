@@ -1,0 +1,14 @@
+numpy
+pyfits
+matplotlib
+astLib
+coord 
+atpy
+montage
+sextractor
+sexcatalog
+scipy
+numdisplay.zscale
+ds9
+astropy
+astroquery
