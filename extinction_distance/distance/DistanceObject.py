@@ -39,6 +39,8 @@ import math
 import numpy as np
 import atpy
 import aplpy
+from astropy import wcs
+# Replaced by astropy.io
 import pyfits
 import matplotlib.pyplot as plt #Just for contouring
 import pylab #Redundant
@@ -52,17 +54,10 @@ from extinction_distance.completeness import determine_completeness
 from extinction_distance.distance import determine_distance
 
 #These are more complicated additions
-#We can probably rewrite things to lose astLib
 #Sextractor and montage are required
-#numdisplay could also be lost. A big requirement for a simple zscale
-#calculation
-import astLib
-import astLib.astWCS
-import astLib.astImages as ai
-import sextractor
+from extinction_distance.completeness import sextractor
 import montage
 from extinction_distance.support import coord
-import numdisplay.zscale
 import ds9
 
 #Astropy related stuff
@@ -151,7 +146,7 @@ class DistanceObject():
         #Display Bolocam
         print(self.bgps_filename)
         bgps,hdr = pyfits.getdata(self.bgps_filename,header=True)
-        bwcs = astLib.astWCS.WCS(hdr,mode="pyfits")
+        bwcs = wcs.WCS(hdr)
         s = 15 #Size of cut-out array in arcmin
         clipped = ai.clipImageSectionWCS(bgps,bwcs,self.glon,self.glat,s/60.,returnWCS=True)
         bgps = clipped['data']

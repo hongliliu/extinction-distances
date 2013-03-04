@@ -11,7 +11,6 @@ import numpy as np
 import atpy
 import copy
 import pylab
-import pdb
 from scipy.interpolate import UnivariateSpline,krogh_interpolate
 from scipy.interpolate import interp1d
 from collections import defaultdict

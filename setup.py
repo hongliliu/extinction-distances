@@ -36,6 +36,7 @@ setup(name='extinction_distance',
       packages=['extinction_distance',
           'extinction_distance.support', 
           'extinction_distance.completeness', 
-          'extinction_distance.distance'], 
+          'extinction_distance.distance',
+          'extinction_distance.images'], 
       cmdclass = {'test': PyTest},
      )
