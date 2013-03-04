@@ -42,24 +42,21 @@ import aplpy
 from astropy import wcs
 from astropy import coordinates
 from astropy import units as u
-# Replaced by astropy.io
-import pyfits
-import matplotlib.pyplot as plt #Just for contouring
-import pylab #Redundant
-from scipy.interpolate import UnivariateSpline,krogh_interpolate
+from astropy.io import fits
+import matplotlib.pyplot as plt #For contouring and display
 from scipy.interpolate import interp1d
 from collections import defaultdict
 
 #These are my programs
 from extinction_distance.completeness import determine_ukidss_zp #does what it says
 from extinction_distance.completeness import determine_completeness
+from extinction_distance.completeness import sextractor
+from extinction_distance.support import coord
 from extinction_distance.distance import determine_distance
 
 #These are more complicated additions
 #Sextractor and montage are required
-from extinction_distance.completeness import sextractor
 import montage
-from extinction_distance.support import coord
 import ds9
 
 #Astropy related stuff
@@ -149,7 +146,7 @@ class DistanceObject():
 
         #Display Bolocam
         print(self.bgps_filename)
-        #bgps,hdr = pyfits.getdata(self.bgps_filename,header=True)
+        #bgps,hdr = fits.getdata(self.bgps_filename,header=True)
         #bwcs = wcs.WCS(hdr)
         s = 15 #Size of cut-out array in arcmin
         #clipped = ai.clipImageSectionWCS(bgps,bwcs,self.glon,self.glat,s/60.,returnWCS=True)
@@ -161,7 +158,7 @@ class DistanceObject():
         #bgps = clipped['data']
         #bwcs = clipped['wcs']
         #ai.saveFITS("temp.fits",clipped['data'],clipped['wcs'])
-        f = pyfits.open("temp.fits")
+        f = fits.open("temp.fits")
         #d.set_np2arr(f[0])
 
         d = ds9.ds9()
@@ -204,11 +201,11 @@ class DistanceObject():
             infile = os.path.join(self.data_dir,self.name+"_"+survey+"_"+band+".fits")
             outfile = os.path.join(self.data_dir,self.name+"_"+survey+"_trim_"+band+".fits")
             try:
-                data,hdr = pyfits.getdata(infile,1,header=True)
+                data,hdr = fits.getdata(infile,1,header=True)
             except IndexError:
-                data,hdr = pyfits.getdata(infile,header=True)
+                data,hdr = fits.getdata(infile,header=True)
             data = np.array(data,dtype=np.float64) #Explicit cast to help Sextractor?
-            pyfits.writeto("Temp.fits",data,hdr,clobber=True)
+            fits.writeto("Temp.fits",data,hdr,clobber=True)
             montage.mSubimage("Temp.fits",outfile,self.glon,self.glat,self.small_ukidss_im_size)
             os.remove("Temp.fits")
         
@@ -336,7 +333,7 @@ class DistanceObject():
             testpoints = np.random.rand(n_samp,2)
             testpoints[:,0] = (testpoints[:,0]-0.5)*size_l+cen_l
             testpoints[:,1] = (testpoints[:,1]-0.5)*size_b+cen_b
-            pylab.plot(testpoints[:,0],testpoints[:,1],'.')
+            plt.plot(testpoints[:,0],testpoints[:,1],'.')
 
             total_area = 0
             for poly in all_poly:
@@ -345,7 +342,7 @@ class DistanceObject():
                 print >>g,verts
                 yo = nx.points_inside_poly(testpoints,verts)
                 #print(yo)
-                pylab.plot(testpoints[yo,0],testpoints[yo,1],'.')
+                plt.plot(testpoints[yo,0],testpoints[yo,1],'.')
                 area = yo.sum()/n_samp*(3600*size_l*size_b)
                 total_area = total_area+area
         print(total_area)
