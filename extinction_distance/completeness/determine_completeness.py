@@ -43,11 +43,12 @@ import sys
 import os
 from extinction_distance.completeness import sextractor
 import numpy as np
-import pyfits
+from astropy.io import fits
+from astropy import wcs
+from astropy import coordinates
+from astropy import units as u
 import math
 import matplotlib.nxutils as nx
-import astLib.astWCS
-import astLib.astCoords
 import extinction_distance.support.coord as coord#This is an old slow version, but has no compat problems
 import atpy
 import montage
@@ -148,10 +149,10 @@ def do_phot(sex,source,survey="UKIDSS"):
                 Kmag.append(Kcatalog[i]['MAG_APER']-k_correct)
 
                 Jmag.append(Jcatalog[int(j)]['MAG_APER']-j_correct)
-                lb = astLib.astCoords.convertCoords("J2000","GALACTIC",
-                                Kcatalog[i]['ALPHA_J2000'],Kcatalog[i]['DELTA_J2000'],2000.)
-                L.append(lb[0])
-                B.append(lb[1])
+                gc = coordinates.ICRSCoordinates(Kcatalog[i]['ALPHA_J2000'],Kcatalog[i]['DELTA_J2000'], unit=(u.degree, u.degree))
+                galcoords = gc.galactic
+                L.append(galcoords.l.degrees)
+                B.append(galcoords.b.degrees)
 
     #print(Kmag)
     t = atpy.Table()
@@ -222,10 +223,10 @@ def do_completeness(sex,source,survey="UKIDSS",k_corr = 0,numtrials=50):
 
     recovery = np.zeros((numtrials,len(mags)))
     for c in range(numtrials):
-        d,h = pyfits.getdata(os.path.join(source+"_data",source+"_"+survey+"_trim_K.fits"),header=True)
-        WCS = astLib.astWCS.WCS(h,mode="pyfits")
+        d,h = fits.getdata(os.path.join(source+"_data",source+"_"+survey+"_trim_K.fits"),header=True)
+        w = wcs.WCS(h)
         all_poly = parse_ds9_regions(os.path.join(source+"_data",source+".reg"))
-        fake_stars = insert_fake_stars(d,h,mags,all_poly,WCS,sex,survey=survey,zp=zp)
+        fake_stars = insert_fake_stars(d,h,mags,all_poly,w,sex,survey=survey,zp=zp)
         #Recover returns an array of [1,1,1,0,0,0,1,0,0,1]
         r = recover(fake_stars,sex)
         recovery[c:] = r
@@ -258,9 +259,18 @@ def insert_fake_stars(d,h,mags,all_poly,WCS,sex,survey="UKIDSS",zp=25.):
                 verts = np.array(poly,float)
                 x = np.random.random_sample()*(xsize-size-6)+(size)
                 y = np.random.random_sample()*(ysize-size-6)+(size)
-                radec = np.array(WCS.pix2wcs(x,y))
-                te = np.array(astLib.astCoords.convertCoords("J2000","GALACTIC",radec[0],radec[1],2000.))
-                yo = nx.pnpoly(te[0],te[1],verts)
+                #print(WCS)
+                #print(x,y)
+
+                pixcrd  = np.array([[x,y]], np.float_)
+                radec = np.array(WCS.wcs_pix2world(pixcrd,0))
+                #print(radec)
+
+                gc = coordinates.ICRSCoordinates(radec[0][0],radec[0][1], unit=(u.degree, u.degree))
+                galcoords = gc.galactic
+                #L.append(galcoords.l.degrees)
+                #B.append(galcoords.b.degrees)
+                yo = nx.pnpoly(galcoords.l.degrees,galcoords.b.degrees,verts)
                 if yo == 1:
                 #print(te)
                 #print("is in")
@@ -275,7 +285,7 @@ def insert_fake_stars(d,h,mags,all_poly,WCS,sex,survey="UKIDSS",zp=25.):
     #       print g.size
         d[y-size:y+size+1,x-size:x+size+1] += g #Damn backward numpy arrays
         fake_stars.append((x,y,mag))
-    pyfits.writeto("TestOuput.fits",d,h,clobber=True)
+    fits.writeto("TestOuput.fits",d,h,clobber=True)
     return(fake_stars)
 
 def insert_fake_star(d,h,mag):
@@ -297,7 +307,7 @@ def insert_fake_star(d,h,mag):
     g = gauss_kern(size,counts) #5 is rough guess for FWHM
     d[y-size:y+size+1,x-size:x+size+1] += g #Damn backward numpy arrays
 
-    pyfits.writeto("TestOuput.fits",d,h,clobber=True)
+    fits.writeto("TestOuput.fits",d,h,clobber=True)
     return(x,y,magnitude)
 
 def recover(properties,sex):

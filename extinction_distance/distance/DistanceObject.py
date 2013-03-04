@@ -217,7 +217,7 @@ class DistanceObject():
         """
         sex = determine_completeness.do_setup(self.name,survey="UKIDSS")
         k_corr = determine_completeness.do_phot(sex,self.name,survey="UKIDSS")
-        determine_completeness.do_completeness(sex,self.name,survey="UKIDSS",k_corr=k_corr,numtrials = 100)
+        determine_completeness.do_completeness(sex,self.name,survey="UKIDSS",k_corr=k_corr,numtrials = 10)
         self.catalog = atpy.Table(os.path.join(self.data_dir,self.name+"_MyCatalog_UKIDSS.vot"))
         self.catalog.describe()
 
