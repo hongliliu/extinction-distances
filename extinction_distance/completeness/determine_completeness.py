@@ -41,14 +41,14 @@ Finally do_phot runs photometry to produce an actual catalog
 
 import sys
 import os
-import extinction_distance.completeness.sextractor
+from extinction_distance.completeness import sextractor
 import numpy as np
 import pyfits
 import math
 import matplotlib.nxutils as nx
 import astLib.astWCS
 import astLib.astCoords
-import extinction_distance.support.coord #This is an old slow version, but has no compat problems
+import extinction_distance.support.coord as coord#This is an old slow version, but has no compat problems
 import atpy
 import montage
 import pickle

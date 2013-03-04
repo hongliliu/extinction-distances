@@ -40,6 +40,8 @@ import numpy as np
 import atpy
 import aplpy
 from astropy import wcs
+from astropy import coordinates
+from astropy import units as u
 # Replaced by astropy.io
 import pyfits
 import matplotlib.pyplot as plt #Just for contouring
@@ -74,7 +76,9 @@ class DistanceObject():
         self.glon,self.glat = coords
         self.glat = float(self.glat)
         self.glon = float(self.glon)
+
         print(self.glat)
+        self.gc = coordinates.GalacticCoordinates(l=self.glon, b=self.glat, unit=(u.degree, u.degree))
 
         self.data_dir = self.name+"_data/"
         try:
@@ -145,13 +149,18 @@ class DistanceObject():
 
         #Display Bolocam
         print(self.bgps_filename)
-        bgps,hdr = pyfits.getdata(self.bgps_filename,header=True)
-        bwcs = wcs.WCS(hdr)
+        #bgps,hdr = pyfits.getdata(self.bgps_filename,header=True)
+        #bwcs = wcs.WCS(hdr)
         s = 15 #Size of cut-out array in arcmin
-        clipped = ai.clipImageSectionWCS(bgps,bwcs,self.glon,self.glat,s/60.,returnWCS=True)
-        bgps = clipped['data']
-        bwcs = clipped['wcs']
-        ai.saveFITS("temp.fits",clipped['data'],clipped['wcs'])
+        #clipped = ai.clipImageSectionWCS(bgps,bwcs,self.glon,self.glat,s/60.,returnWCS=True)
+        blah = self.gc.icrs
+        ra = blah.ra.degrees
+        dec = blah.dec.degrees
+        print(ra,dec)
+        montage.mSubimage(self.bgps_filename,"temp.fits",ra,dec,s/60.)
+        #bgps = clipped['data']
+        #bwcs = clipped['wcs']
+        #ai.saveFITS("temp.fits",clipped['data'],clipped['wcs'])
         f = pyfits.open("temp.fits")
         #d.set_np2arr(f[0])
 
