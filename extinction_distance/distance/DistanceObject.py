@@ -47,6 +47,9 @@ import matplotlib.pyplot as plt #For contouring and display
 from scipy.interpolate import interp1d
 from collections import defaultdict
 
+import matplotlib._cntr as _cntr
+
+
 #These are my programs
 from extinction_distance.completeness import determine_ukidss_zp #does what it says
 from extinction_distance.completeness import determine_completeness
@@ -56,8 +59,8 @@ from extinction_distance.distance import determine_distance
 
 #These are more complicated additions
 #Sextractor and montage are required
-import montage
-import ds9
+#import montage
+#import ds9
 
 #Astropy related stuff
 #from astropy import astroquery
@@ -65,6 +68,7 @@ import ds9
 #import astropy.io.ascii as asciitable
 #from astropy.io.ascii import besancon as besancon_reader
 #from astroquery import ukidss
+from astroquery.ukidss import Ukidss
 
 
 class DistanceObject():
@@ -83,10 +87,10 @@ class DistanceObject():
         except OSError:
             pass
 
-        self.besancon_area = 0.4 #Area for model in sq. degrees. Large=less sampling error
+        self.besancon_area = 0.4*u.deg*u.deg #Area for model in sq. degrees. Large=less sampling error
         self.ukidss_directory = "" # XXX This needs to point to a way to save XXX
-        self.ukidss_im_size = 15 #Size of UKIDSS cutout (symmetric) in arcminutes
-        self.small_ukidss_im_size = 0.15 #Size of UKIDSS image for Sextractor
+        self.ukidss_im_size = 15*u.arcmin #Size of UKIDSS cutout (symmetric) in arcminutes
+        self.small_ukidss_im_size = 0.15*u.deg #Size of UKIDSS image for Sextractor
     
     def generate_besancon(self):
         """
@@ -99,23 +103,33 @@ class DistanceObject():
         self.besancon_model = asciitable.read(besancon_model,
                         Reader=asciitable.besancon.BesanconFixed,guess=False)
     
-    def get_ukidss_data(self):
+    def get_ukidss_images(self):
         """
         Get UKIDSS data/images for this region.
         This comes from astropy.astroquery
 
         Raw data is saved into self.data_dir as 
         self.name+"_UKIDSS_J.fits"
-        Catalog (necessary for zero-point determination) is saved
-        into self.data_dir as
-        self.name+"_UKIDSS_cat.fits"
 
         """
         #Get images
-        Q = ukidss.UKIDSSQuery(directory=self.ukidss_directory)
-        J = Q.get_image_gal(self.glon,self.glat,filter='J',size=self.ukidss_im_size,save=True,overwrite=True)
-        H = Q.get_image_gal(self.glon,self.glat,filter='H',size=self.ukidss_im_size,save=True,overwrite=True)
-        K = Q.get_image_gal(self.glon,self.glat,filter='K',size=self.ukidss_im_size,save=True,overwrite=True)
+        for filtername in ["J","H","K"]:
+            iamges = Ukidss.get_images(coord.Galactic(l=self.glon, b=self.glat, unit=(u.deg, u.deg)),
+                                       waveband=filtername,
+                                       radius=self.ukidss_im_size)
+            fits.writeto(self.data_dir+"/"+self.name+"_UKIDSS_"+filtername+".fits",
+                         Jim[0][1].data,Jim[0][1].header)
+                         
+    def get_ukidss_cat(self):
+        """
+        Get the UKIDSS catalog
+        Catalog (necessary for zero-point determination) is saved
+        into self.data_dir as
+        self.name+"_UKIDSS_cat.fits"
+        """
+        table = Ukidss.query_region(coord.Galactic(l=self.glon,
+                    b=self.glat,  unit=(u.deg, u.deg)), radius=self.ukidss_im_size)
+        table.write(self.data_dir+"/"+self.name+"_UKIDSS_cat.fits",format="fits")
         #Get catalog. We need this to establish zero-points/colours
         
     
