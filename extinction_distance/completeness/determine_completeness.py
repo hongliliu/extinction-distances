@@ -48,10 +48,11 @@ from astropy import wcs
 from astropy import coordinates
 from astropy import units as u
 import math
-import matplotlib.nxutils as nx
+#import matplotlib.nxutils as nx
+from matplotlib.path import Path
 import extinction_distance.support.coord as coord#This is an old slow version, but has no compat problems
 import atpy
-import montage
+import montage_wrapper as montage
 import pickle
 import pylab
 import determine_ukidss_zp
@@ -89,7 +90,7 @@ def do_phot(sex,source,survey="UKIDSS"):
 
     print("Doing H photometry...")
 
-    sex.run(os.path.join(source+"_data",source+"_"+survey+"_trim_H.fits"))
+    sex.run(os.path.join(source+"_data",source+"_"+survey+"_H.fits"))
     #print(os.path.join(source+"_data",source+"_"+survey+"_trim_H.fits"))
     #Hcatalog = sex.catalog("py-sextractor.cat")
     Hcatalog = sex.catalog()
@@ -97,11 +98,11 @@ def do_phot(sex,source,survey="UKIDSS"):
 
     print("Doing K photometry...")
 
-    sex.run(os.path.join(source+"_data",source+"_"+survey+"_trim_K.fits"))
+    sex.run(os.path.join(source+"_data",source+"_"+survey+"_K.fits"))
     Kcatalog = sex.catalog()
     try:
         k_correct = determine_ukidss_zp.calibrate(source,"K_1")
-    except IndexError:
+    except ValueError:
         print("Failed to calibrate, assuming no correction")
         k_correct = 0
 
@@ -110,7 +111,7 @@ def do_phot(sex,source,survey="UKIDSS"):
         print("Completeness for "+source+" likely wrong")
 
     print("Doing J photometry...")
-    sex.run(os.path.join(source+"_data",source+"_"+survey+"_trim_J.fits"))
+    sex.run(os.path.join(source+"_data",source+"_"+survey+"_J.fits"))
     Jcatalog = sex.catalog()
     try:
         j_correct = determine_ukidss_zp.calibrate(source,"J")
@@ -151,8 +152,8 @@ def do_phot(sex,source,survey="UKIDSS"):
                 Jmag.append(Jcatalog[int(j)]['MAG_APER']-j_correct)
                 gc = coordinates.ICRSCoordinates(Kcatalog[i]['ALPHA_J2000'],Kcatalog[i]['DELTA_J2000'], unit=(u.degree, u.degree))
                 galcoords = gc.galactic
-                L.append(galcoords.l.degrees)
-                B.append(galcoords.b.degrees)
+                L.append(galcoords.l.degree)
+                B.append(galcoords.b.degree)
 
     #print(Kmag)
     t = atpy.Table()
@@ -210,7 +211,8 @@ def do_phot(sex,source,survey="UKIDSS"):
 
 
 
-def do_completeness(sex,source,survey="UKIDSS",k_corr = 0,numtrials=50):
+def do_completeness(sex,source,contours,survey="UKIDSS",k_corr = 0,numtrials=50):
+    print("Running completeness...")
     if survey == "UKIDSS":
         mags = [11,12,13,14,15,16,17,18,19]
         percent = {11:[],12:[],13:[],14:[],15:[],16:[],17:[],18:[],19:[]}
@@ -223,9 +225,10 @@ def do_completeness(sex,source,survey="UKIDSS",k_corr = 0,numtrials=50):
 
     recovery = np.zeros((numtrials,len(mags)))
     for c in range(numtrials):
-        d,h = fits.getdata(os.path.join(source+"_data",source+"_"+survey+"_trim_K.fits"),header=True)
+        d,h = fits.getdata(os.path.join(source+"_data",source+"_"+survey+"_K.fits"),header=True)
         w = wcs.WCS(h)
-        all_poly = parse_ds9_regions(os.path.join(source+"_data",source+".reg"))
+        #all_poly = parse_ds9_regions(os.path.join(source+"_data",source+".reg"))
+        all_poly = contours
         fake_stars = insert_fake_stars(d,h,mags,all_poly,w,sex,survey=survey,zp=zp)
         #Recover returns an array of [1,1,1,0,0,0,1,0,0,1]
         r = recover(fake_stars,sex)
@@ -233,7 +236,7 @@ def do_completeness(sex,source,survey="UKIDSS",k_corr = 0,numtrials=50):
     sex.clean(config=True,catalog=True,check=True)
 
     #print(recovery)
-    print(mags)
+    #print(mags)
     #print(recovery.sum(axis=0)/numtrials)
     comp = recovery.sum(axis=0)/numtrials
     print(comp)
@@ -255,26 +258,30 @@ def insert_fake_stars(d,h,mags,all_poly,WCS,sex,survey="UKIDSS",zp=25.):
     for mag in mags:
         flag_in = False
         while flag_in == False:
-            for poly in all_poly:
-                verts = np.array(poly,float)
-                x = np.random.random_sample()*(xsize-size-6)+(size)
-                y = np.random.random_sample()*(ysize-size-6)+(size)
-                #print(WCS)
-                #print(x,y)
+            poly = all_poly #We now only have one contour
+            #for poly in all_poly:
+            #print(poly)
+            verts = np.array(poly,float)
+            x = np.random.random_sample()*(xsize-size-6)+(size)
+            y = np.random.random_sample()*(ysize-size-6)+(size)
+            #print(WCS)
+            #print(x,y)
 
-                pixcrd  = np.array([[x,y]], np.float_)
-                radec = np.array(WCS.wcs_pix2world(pixcrd,0))
-                #print(radec)
+            pixcrd  = np.array([[x,y]], np.float_)
+            radec = np.array(WCS.wcs_pix2world(pixcrd,0))
+            #print(radec)
 
-                gc = coordinates.ICRSCoordinates(radec[0][0],radec[0][1], unit=(u.degree, u.degree))
-                galcoords = gc.galactic
-                #L.append(galcoords.l.degrees)
-                #B.append(galcoords.b.degrees)
-                yo = nx.pnpoly(galcoords.l.degrees,galcoords.b.degrees,verts)
-                if yo == 1:
-                #print(te)
-                #print("is in")
-                    flag_in = True
+            gc = coordinates.ICRSCoordinates(radec[0][0],radec[0][1], unit=(u.degree, u.degree))
+            galcoords = gc.galactic
+            #L.append(galcoords.l.degrees)
+            #B.append(galcoords.b.degrees)
+            path = Path(verts)
+            yo = path.contains_point((galcoords.l.degree,galcoords.b.degree))
+            #yo = nx.pnpoly(galcoords.l.degrees,galcoords.b.degrees,verts)
+            if yo == 1:
+            #print(te)
+            #print("is in")
+                flag_in = True
         magnitude = mag
         #zp = sex.config['MAG_ZEROPOINT']
         #Now we pass in zp instead

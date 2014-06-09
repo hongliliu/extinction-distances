@@ -42,7 +42,12 @@ def do_besancon_estimate(model_data,kupperlim,klowerlim,colorcut,cloud,upperdens
             foreground.add_column('corrk',(foreground['V']-foreground['V-K']) + Mags_per_kpc*0.114*foreground['Dist'])
 
         J_min_K = foreground[(foreground['corrk'] < kupperlim) & (foreground['corrk'] > klowerlim) & (foreground['corrj']-foreground['corrk'] < colorcut)]
-        #The 25/3600. takes us to per square arcmin
+        #The 25/3600. takes us to per square arcmin for a field of 0.04 sq degree
+        #print("At a distance of ")
+        #print(cloud_distance)
+        #print("We have ")
+        #print(str(len(J_min_K)*(25/3600.)))
+        #print("blue stars per arcminute?")
         blue_star_density_model.append(len(J_min_K)*(25/3600.)) #Old X.sum() notation DOES NOT WORK!!
 
     blah = smooth(np.array(blue_star_density_model),window_len=9,window='hanning')

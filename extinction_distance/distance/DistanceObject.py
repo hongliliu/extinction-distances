@@ -87,7 +87,7 @@ class DistanceObject():
         except OSError:
             pass
 
-        self.besancon_area = 0.4*u.deg*u.deg #Area for model in sq. degrees. Large=less sampling error
+        self.besancon_area = 0.04*u.deg*u.deg #Area for model in sq. degrees. Large=less sampling error
         self.ukidss_directory = "" # XXX This needs to point to a way to save XXX
         self.ukidss_im_size = 15*u.arcmin #Size of UKIDSS cutout (symmetric) in arcminutes
         self.small_ukidss_im_size = 0.15*u.deg #Size of UKIDSS image for Sextractor
@@ -280,7 +280,11 @@ class DistanceObject():
         distance_ukidss = d
         upper_ukidss = upp
         lower_ukidss = low
-
+        print("==== Distance Results ====")
+        print(distance_ukidss)
+        print(lower_ukidss)
+        print(upper_ukidss)
+        print("==========================")
 
         #make_images()
     
