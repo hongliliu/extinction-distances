@@ -62,7 +62,7 @@ import matplotlib._cntr as _cntr
 
 #These are more complicated additions
 #Sextractor and montage are required
-#import montage
+import montage_wrapper as montage
 #import ds9
 
 #Astropy related stuff
@@ -81,8 +81,9 @@ class DistObj():
         self.glat = float(self.glat)
         self.glon = float(self.glon)
 
-        print(self.glat)
+        #print(self.glat)
         self.gc = coordinates.GalacticCoordinates(l=self.glon, b=self.glat, unit=(u.degree, u.degree))
+        #self.eq = self.gc.fk5
 
         self.data_dir = self.name+"_data/"
         try:
@@ -100,7 +101,13 @@ class DistObj():
         self.kim = self.data_dir+self.name+"_UKIDSS_K.fits"
         self.ukidss_cat = self.data_dir+self.name+"_UKIDSS_cat.fits"
         self.bgps = self.data_dir+self.name+"_BGPS.fits"
+        self.rgbcube = self.data_dir+self.name+"_cube.fits"
+        self.rgbcube2d = self.data_dir+self.name+"_cube_2d.fits"
+        
+        self.rgbpng = self.data_dir+self.name+".png"
+        self.contour_check = self.data_dir+self.name+"_contours.png"
 
+        self.model = self.data_dir+self.name+"_model.dat"
 
         
     def get_ukidss_images(self):
@@ -117,7 +124,8 @@ class DistObj():
             images = Ukidss.get_images(coordinates.Galactic(l=self.glon, b=self.glat, 
                                         unit=(u.deg, u.deg)),
                                         waveband=filtername,
-                                        radius=self.ukidss_im_size)
+                                        image_width=3*u.arcmin)
+            print(images)
             #This makes a big assumption that the first UKIDSS image is the one we want
             fits.writeto(filename,
                          images[0][1].data,images[0][1].header)
@@ -141,7 +149,19 @@ class DistObj():
             fits.writeto(self.bgps,
                          image[0].data,image[0].header,clobber=clobber)
     
-    
+    def get_model(self,clobber=False):
+        from astroquery import besancon
+        import astropy.io.ascii as asciitable
+        
+        if (not os.path.isfile(self.model)) or clobber:
+            besancon_model = besancon.request_besancon('jonathan.b.foster@yale.edu',
+                                            glon=self.glon,glat=self.glat,
+                                            small_field=True,
+                                            area = 0.04,
+                                            retrieve_file=True)
+        B = asciitable.read(besancon_model,Reader=besancon.reader,guess=False)
+        print(B)
+            
     def get_contours(self, fitsfile, av=10.):
         """
         Given a Bolocam FITS file, return the contours at a given flux level
@@ -158,7 +178,8 @@ class DistObj():
         #if header.get('BGPSVERS').strip()=='1.0':
         av_to_jy /= 1.5
 
-        contour_level = av / av_to_jy
+        contour_level = 0.8 #10 av in Jy?
+        #av / av_to_jy
 
         wcs = pywcs.WCS(header)
         #wcsgrid = wcs.wcs_pix2world( np.array(zip(np.arange(wcs.naxis1),np.arange(wcs.naxis2))), 0 ).T
@@ -170,48 +191,35 @@ class DistObj():
 
         wcs_paths = [wcs.wcs_pix2world(p,0) for p in paths]
 
-        return wcs_paths
+        return wcs_paths[0]
         
-    def show_contours_on_threecolor(self, contours, color='c'):
-        """
-        Given contours from get_contours and a list of JHK images from make_densitymap, plot things
+    def show_contours_on_threecolor(self, color='c',clobber=False):
         """
 
-        header = fits.getheader(self.jim)
-        J = fits.getdata(self.jim)
-        H = fits.getdata(self.him)
-        K = fits.getdata(self.kim)
-        
-        if J.shape != K.shape:
-            J = np.zeros(K.shape)
-        if H.shape != K.shape:
-            H = np.zeros(K.shape)
-        rgb = ([K,H,J])
-        #alpha = np.array(rgb).sum(axis=0)
-        #alpha /= alpha.max()
-        #alpha *= 0.5
-        #alpha += 0.5
-        alpha = np.ones(K.shape)
-        #alpha = histeq(alpha)
-        rgb.append(alpha)
-        rgb = np.array(rgb).T
-        #rgb[:,:,0],rgb[:,:,2] = rgb[:,:,2],rgb[:,:,0]
-        rgb[:,:,:3] /= 5.
+        """
+        if (not os.path.isfile(self.rgbcube)) or clobber:
+            aplpy.make_rgb_cube([self.kim,self.him,self.jim],self.rgbcube)
+            aplpy.make_rgb_image(self.rgbcube,self.rgbpng)
+            f = aplpy.FITSFigure(self.rgbcube2d)
+            f.show_rgb(self.rgbpng)
+            f.show_contour(self.bgps,levels=[0.8],convention='calabretta',colors='white')
+            f.save(self.contour_check)
+            
 
-        wcs = pywcs.WCS(header)
-        xglon,yglat = wcs.wcs_pix2world( np.array(zip(np.arange(wcs.naxis1),np.arange(wcs.naxis2))), 0 ).T
 
-        plt.imshow(rgb,extent=[xglon.min(),xglon.max(),yglat.min(),yglat.max()])
-        for C in contours:
-            plt.plot(*C.T.tolist(),color=color)
-        plt.savefig("test.png")
+    def contour_area(self,xy):
+        """ 
+            Calculates polygon area.
+            x = xy[:,0], y = xy[:,1]
+        """
+        l = len(xy)
+        s = 0.0
+        # Python arrys are zero-based
+        for i in range(l):
+            j = (i+1)%l  # keep index in [0,l)
+            s += (xy[j,0] - xy[i,0])*(xy[j,1] + xy[i,1])
+        return -0.5*s
 
-    def contour_segments(self, p):
-        return zip(p, p[1:] + [p[0]])
-
-    def contour_area(self, p):
-        return 0.5 * abs(sum(x0*y1 - x1*y0
-                             for ((x0, y0), (x1, y1)) in segments(p)))
         
     
     def make_images(self):

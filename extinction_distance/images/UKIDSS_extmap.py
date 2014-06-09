@@ -190,6 +190,8 @@ def show_contours_on_extinction(contours, jhk, color='c'):
     for C in contours:
         pylab.plot(*C.T.tolist(),color=color)
 
+
+
 def contour_segments(p):
     return zip(p, p[1:] + [p[0]])
 
