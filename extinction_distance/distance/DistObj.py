@@ -12,18 +12,8 @@ UKIDSS/2MASS/VVV
 BGPS/HiGAL/ATLASGAL
 Besancon/TriLegal
 
-current_cloud = DistanceObject.DistanceObject(name,coords)
-
-current_cloud.find_bgps
-current_cloud.make_contour
-current_cloud.generate_besancon
-current_cloud.get_ukidss_data
-    current_cloud.process_ukidss_data
-
-    Actually these two steps are intimately connected. So 
-    doing the catalog also has to do the completeness estimate
-    current_cloud.make_photo_catalog()
-current_cloud.do_distance_estimate
+See get_distance.py for an end-to-end example
+of how to get a distance for a cloud.
 
 """
 
@@ -35,7 +25,6 @@ import subprocess
 import pickle
 import math
 import os.path
-
 
 #These are necessary imports
 import numpy as np
@@ -55,24 +44,10 @@ import matplotlib._cntr as _cntr
 
 from extinction_distance.distance import determine_distance
 
-#These are my programs
-#from extinction_distance.completeness import determine_ukidss_zp #does what it says
-#from extinction_distance.completeness import determine_completeness
-#from extinction_distance.completeness import sextractor
-#from extinction_distance.support import coord
-#from extinction_distance.distance import determine_distance
-
 #These are more complicated additions
 #Sextractor and montage are required
 import montage_wrapper as montage
-#import ds9
 
-#Astropy related stuff
-#from astropy import astroquery
-#from astroquery import besancon
-#import astropy.io.ascii as asciitable
-#from astropy.io.ascii import besancon as besancon_reader
-#from astroquery import ukidss
 from astroquery.ukidss import Ukidss
 from astroquery.magpis import Magpis
 
@@ -93,10 +68,12 @@ class DistObj():
         except OSError:
             pass
 
-        self.besancon_area = 0.4*u.deg*u.deg #Area for model in sq. degrees. Large=less sampling error
+        self.besancon_area = 0.04*u.deg*u.deg #Area for model in sq. degrees. Large=less sampling error
         self.ukidss_directory = "" # XXX This needs to point to a way to save XXX
-        self.ukidss_im_size = 3*u.arcmin #Size of UKIDSS cutout (symmetric) in arcminutes
-        self.small_ukidss_im_size = 2*u.arcmin #Size of UKIDSS image for Sextractor
+        self.ukidss_im_size = 6*u.arcmin #Size of UKIDSS cutout (symmetric) in arcminutes
+        self.small_ukidss_im_size = 3*u.arcmin #Size of UKIDSS image for Sextractor
+        
+        self.contour_level = 0.1 #This is for BGPS
         
         self.jim = self.data_dir+self.name+"_UKIDSS_J.fits"
         self.him = self.data_dir+self.name+"_UKIDSS_H.fits"
@@ -193,11 +170,11 @@ class DistObj():
         #hdulist.close()
 
         # from Foster 2012
-        av_to_jy = 6.77e22/9.4e20 # cm^-2 / Jy / (cm^-2 / AV) = AV/Jy
+        #av_to_jy = 6.77e22/9.4e20 # cm^-2 / Jy / (cm^-2 / AV) = AV/Jy
         #if header.get('BGPSVERS').strip()=='1.0':
-        av_to_jy /= 1.5
+        #av_to_jy /= 1.5
 
-        contour_level = 0.1 #10 av in Jy?
+        contour_level = self.contour_level #10 av in Jy?
         #av / av_to_jy
 
         wcs = pywcs.WCS(header)
@@ -210,7 +187,16 @@ class DistObj():
 
         wcs_paths = [wcs.wcs_pix2world(p,0) for p in paths]
 
-        self.contours =  wcs_paths[0]
+        index = 0
+        if len(wcs_paths) > 1:
+            print("More than one contour")
+            for i,wcs_path in enumerate(wcs_paths):
+                path = Path(wcs_path)        
+                if path.contains_point((self.glon,self.glat)):
+                    index = i
+            self.contours = wcs_paths[index]
+        else:
+            self.contours =  wcs_paths[0]
         self.contour_area = self.calc_contour_area(self.contours)
         
         #Need to find a way to ONLY select the contour closest to our cloud position!!!
@@ -221,6 +207,7 @@ class DistObj():
 
         """
         from extinction_distance.support import zscale
+        print("Making color-contour checkimage...")
         if (not os.path.isfile(self.rgbcube)) or clobber:
             aplpy.make_rgb_cube([self.kim,self.him,self.jim],self.rgbcube)
         k = fits.getdata(self.kim)
@@ -236,7 +223,7 @@ class DistObj():
                              vmin_b = b1, vmax_b = b2)
         f = aplpy.FITSFigure(self.rgbcube2d)
         f.show_rgb(self.rgbpng)
-        f.show_contour(self.bgps,levels=[0.1],convention='calabretta',colors='white')
+        f.show_contour(self.bgps,levels=[self.contour_level],convention='calabretta',colors='white')
         f.save(self.contour_check)
 
 
@@ -251,7 +238,7 @@ class DistObj():
         for i in range(l):
             j = (i+1)%l  # keep index in [0,l)
             s += (xy[j,0] - xy[i,0])*(xy[j,1] + xy[i,1])
-        return -0.5*s
+        return np.abs(0.5*s)
 
     def make_photo_catalog(self,force_completeness=False):
         """
@@ -292,7 +279,7 @@ class DistObj():
                                         survey="UKIDSS")
         print("Total area is...")
         print(self.total_poly_area)
-        print("Degrees?")
+        print("arcminutes")
         self.allblue+=blue
         self.n_blue +=n_blue
         self.model_data = self.load_besancon(self.model,write=False) #Read in the Besancon model
@@ -440,7 +427,8 @@ class DistObj():
         #Restore this
         #if plot:
         #    self.plotcolorhistogram(good.JMag-good.KMag,blue_full.JMag-blue_full.KMag,label="Full_Cloud",survey=survey)
-        #    self.plotcolorhistogram(in_contour.JMag-in_contour.KMag,blue_in_contour.JMag-blue_in_contour.KMag,label="On_Source",survey=survey)
+        self.plot_color_histogram(in_contour.JMag-in_contour.KMag,
+                                  blue_in_contour.JMag-blue_in_contour.KMag)
 
         compfactor = f(blue_in_contour.KMag)
         #print(compfactor)
@@ -455,14 +443,20 @@ class DistObj():
         return(sum(blue_stars),n_blue)
         
     
-    def make_images(self):
+    def plot_color_histogram(self,JminK,JminK_blue):
         """
         Make the three check-images
         1) 3-color image of region
         2) J-K histogram
         3) Distance estimate plot
         """
-        pass
+        plt.figure()
+        plt.hist(JminK,color='gray',bins=np.arange(-0.2,3.2,0.1))
+        plt.hist(JminK_blue,color='blue',bins=np.arange(-0.2,3.2,0.1))
+        plt.xlabel("J-K [mag]")
+        plt.ylabel("Number of Stars")
+        plt.axvline(x=1.5,ls=":")
+        plt.savefig(self.data_dir+self.name+"_hist.png")
     
 
 if __name__ == '__main__':

@@ -52,6 +52,7 @@ def do_besancon_estimate(model_data,kupperlim,klowerlim,colorcut,cloud,upperdens
 
     blah = smooth(np.array(blue_star_density_model),window_len=9,window='hanning')
     #pylab.figure(figsize=(4,4))
+    pylab.clf()
     pylab.plot(cloud_distances,blah,label="Besancon",color='k',ls='--')
     pylab.xlabel("Distance [pc]")
     pylab.ylabel("Number of Blue Stars/(sq. arcmin)")
@@ -98,7 +99,7 @@ def do_besancon_estimate(model_data,kupperlim,klowerlim,colorcut,cloud,upperdens
     fig.set_size_inches(6,6)
     Size = fig.get_size_inches()
     print("Size in Inches: "+str(Size))
-    pylab.savefig(os.path.join(cloud.name+"_data",cloud.name+"_Distance_"+survey+'.pdf'))
+    pylab.savefig(os.path.join(cloud.name+"_data",cloud.name+"_Distance_"+survey+'.png'))
     pylab.clf()
 
     print("Distance = "+str(central)+"+"+str(upperlim-central)+str(lowerlim-central))

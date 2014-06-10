@@ -242,7 +242,6 @@ class DistanceObject():
         stars inside the contour and the
         besancon model.
         """
-        pass
         self.load_data()
         blue_cut = 1.5 #Magic number for J-K cut. Put this elsewhere
         kup = 17 #More magic numbers
