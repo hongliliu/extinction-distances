@@ -86,7 +86,7 @@ class DistObj():
         self.rgbpng = self.data_dir+self.name+".png"
         self.contour_check = self.data_dir+self.name+"_contours.png"
 
-        self.model = self.data_dir+self.name+"_model.dat"
+        self.model = self.data_dir+self.name+"_model.fits"
         self.completeness_filename = os.path.join(self.data_dir,self.name+"_completeness_UKIDSS.pkl")
         
     def get_ukidss_images(self,clobber=False):
@@ -141,18 +141,23 @@ class DistObj():
             
     def get_model(self,clobber=False):
         """
-        Currently not working!!
+        Get a Besancon model for this region of sky
         """
         
         from astroquery import besancon
         
         if (not os.path.isfile(self.model)) or clobber:
             print("Fetching Besancon model from server...")
-            besancon_model = besancon.request_besancon('jonathan.b.foster@yale.edu',
+            besancon_model = besancon.Besancon.query(email='jonathan.b.foster@yale.edu',
                                             glon=self.glon,glat=self.glat,
-                                            small_field=True,
+                                            smallfield=True,
                                             area = 0.04,
-                                            retrieve_file=True)
+                                            mag_limits = {"K":(5,19)},
+                                            extinction = 0.0,
+                                            verbose = True,
+                                            retrieve_file=True,
+                                            rsup=10.)
+            besancon_model.write(self.model,format="fits")
         else:
             print("Besancon model already downloaded. Use clobber=True to fetch new versions.")
             
@@ -353,8 +358,12 @@ class DistObj():
         comp = pickle.load(g)
         g.close()
         self.completeness = np.column_stack((mag,comp))
+    
+    def load_besancon(self):
+        from astropy.table import Table
+        return(Table.read(self.model))
      
-    def load_besancon(self,filename,write=False):
+    def load_besancon_old(self,filename,write=False):
         """
         Read a besancon model file
         """
