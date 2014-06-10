@@ -1,7 +1,7 @@
 import atpy #Needs >0.9.5 due to bug in comment handling
-import sextractor
+from extinction_distance.completeness import sextractor
 import numpy as np
-import coord #This is an old slow version, but has no compat problems
+import extinction_distance.support.coord as coord #This is an old slow version, but has no compat problems
 import os
 import math
 

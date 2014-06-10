@@ -1,4 +1,4 @@
-import DistanceObject
+import extinction_distance.distance.DistanceObject as DistanceObject
 
 current_cloud = DistanceObject.DistanceObject("G23.01-0.41",(23.01,-0.41))
 current_cloud.find_bgps()

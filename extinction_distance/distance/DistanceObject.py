@@ -39,31 +39,28 @@ import math
 import numpy as np
 import atpy
 import aplpy
-import pyfits
-import matplotlib.pyplot as plt #Just for contouring
-import pylab #Redundant
-from scipy.interpolate import UnivariateSpline,krogh_interpolate
+from astropy import wcs
+from astropy import coordinates
+from astropy import units as u
+from astropy.io import fits
+import matplotlib.pyplot as plt #For contouring and display
 from scipy.interpolate import interp1d
 from collections import defaultdict
+
+import matplotlib._cntr as _cntr
+
 
 #These are my programs
 from extinction_distance.completeness import determine_ukidss_zp #does what it says
 from extinction_distance.completeness import determine_completeness
+from extinction_distance.completeness import sextractor
+from extinction_distance.support import coord
 from extinction_distance.distance import determine_distance
 
 #These are more complicated additions
-#We can probably rewrite things to lose astLib
 #Sextractor and montage are required
-#numdisplay could also be lost. A big requirement for a simple zscale
-#calculation
-import astLib
-import astLib.astWCS
-import astLib.astImages as ai
-import sextractor
-import montage
-from extinction_distance.support import coord
-import numdisplay.zscale
-import ds9
+#import montage
+#import ds9
 
 #Astropy related stuff
 #from astropy import astroquery
@@ -71,6 +68,7 @@ import ds9
 #import astropy.io.ascii as asciitable
 #from astropy.io.ascii import besancon as besancon_reader
 #from astroquery import ukidss
+from astroquery.ukidss import Ukidss
 
 
 class DistanceObject():
@@ -79,7 +77,9 @@ class DistanceObject():
         self.glon,self.glat = coords
         self.glat = float(self.glat)
         self.glon = float(self.glon)
+
         print(self.glat)
+        self.gc = coordinates.GalacticCoordinates(l=self.glon, b=self.glat, unit=(u.degree, u.degree))
 
         self.data_dir = self.name+"_data/"
         try:
@@ -87,10 +87,10 @@ class DistanceObject():
         except OSError:
             pass
 
-        self.besancon_area = 0.4 #Area for model in sq. degrees. Large=less sampling error
+        self.besancon_area = 0.4*u.deg*u.deg #Area for model in sq. degrees. Large=less sampling error
         self.ukidss_directory = "" # XXX This needs to point to a way to save XXX
-        self.ukidss_im_size = 15 #Size of UKIDSS cutout (symmetric) in arcminutes
-        self.small_ukidss_im_size = 0.15 #Size of UKIDSS image for Sextractor
+        self.ukidss_im_size = 15*u.arcmin #Size of UKIDSS cutout (symmetric) in arcminutes
+        self.small_ukidss_im_size = 0.15*u.deg #Size of UKIDSS image for Sextractor
     
     def generate_besancon(self):
         """
@@ -103,23 +103,33 @@ class DistanceObject():
         self.besancon_model = asciitable.read(besancon_model,
                         Reader=asciitable.besancon.BesanconFixed,guess=False)
     
-    def get_ukidss_data(self):
+    def get_ukidss_images(self):
         """
         Get UKIDSS data/images for this region.
         This comes from astropy.astroquery
 
         Raw data is saved into self.data_dir as 
         self.name+"_UKIDSS_J.fits"
-        Catalog (necessary for zero-point determination) is saved
-        into self.data_dir as
-        self.name+"_UKIDSS_cat.fits"
 
         """
         #Get images
-        Q = ukidss.UKIDSSQuery(directory=self.ukidss_directory)
-        J = Q.get_image_gal(self.glon,self.glat,filter='J',size=self.ukidss_im_size,save=True,overwrite=True)
-        H = Q.get_image_gal(self.glon,self.glat,filter='H',size=self.ukidss_im_size,save=True,overwrite=True)
-        K = Q.get_image_gal(self.glon,self.glat,filter='K',size=self.ukidss_im_size,save=True,overwrite=True)
+        for filtername in ["J","H","K"]:
+            iamges = Ukidss.get_images(coord.Galactic(l=self.glon, b=self.glat, unit=(u.deg, u.deg)),
+                                       waveband=filtername,
+                                       radius=self.ukidss_im_size)
+            fits.writeto(self.data_dir+"/"+self.name+"_UKIDSS_"+filtername+".fits",
+                         Jim[0][1].data,Jim[0][1].header)
+                         
+    def get_ukidss_cat(self):
+        """
+        Get the UKIDSS catalog
+        Catalog (necessary for zero-point determination) is saved
+        into self.data_dir as
+        self.name+"_UKIDSS_cat.fits"
+        """
+        table = Ukidss.query_region(coord.Galactic(l=self.glon,
+                    b=self.glat,  unit=(u.deg, u.deg)), radius=self.ukidss_im_size)
+        table.write(self.data_dir+"/"+self.name+"_UKIDSS_cat.fits",format="fits")
         #Get catalog. We need this to establish zero-points/colours
         
     
@@ -150,14 +160,19 @@ class DistanceObject():
 
         #Display Bolocam
         print(self.bgps_filename)
-        bgps,hdr = pyfits.getdata(self.bgps_filename,header=True)
-        bwcs = astLib.astWCS.WCS(hdr,mode="pyfits")
+        #bgps,hdr = fits.getdata(self.bgps_filename,header=True)
+        #bwcs = wcs.WCS(hdr)
         s = 15 #Size of cut-out array in arcmin
-        clipped = ai.clipImageSectionWCS(bgps,bwcs,self.glon,self.glat,s/60.,returnWCS=True)
-        bgps = clipped['data']
-        bwcs = clipped['wcs']
-        ai.saveFITS("temp.fits",clipped['data'],clipped['wcs'])
-        f = pyfits.open("temp.fits")
+        #clipped = ai.clipImageSectionWCS(bgps,bwcs,self.glon,self.glat,s/60.,returnWCS=True)
+        blah = self.gc.icrs
+        ra = blah.ra.degrees
+        dec = blah.dec.degrees
+        print(ra,dec)
+        montage.mSubimage(self.bgps_filename,"temp.fits",ra,dec,s/60.)
+        #bgps = clipped['data']
+        #bwcs = clipped['wcs']
+        #ai.saveFITS("temp.fits",clipped['data'],clipped['wcs'])
+        f = fits.open("temp.fits")
         #d.set_np2arr(f[0])
 
         d = ds9.ds9()
@@ -200,11 +215,11 @@ class DistanceObject():
             infile = os.path.join(self.data_dir,self.name+"_"+survey+"_"+band+".fits")
             outfile = os.path.join(self.data_dir,self.name+"_"+survey+"_trim_"+band+".fits")
             try:
-                data,hdr = pyfits.getdata(infile,1,header=True)
+                data,hdr = fits.getdata(infile,1,header=True)
             except IndexError:
-                data,hdr = pyfits.getdata(infile,header=True)
+                data,hdr = fits.getdata(infile,header=True)
             data = np.array(data,dtype=np.float64) #Explicit cast to help Sextractor?
-            pyfits.writeto("Temp.fits",data,hdr,clobber=True)
+            fits.writeto("Temp.fits",data,hdr,clobber=True)
             montage.mSubimage("Temp.fits",outfile,self.glon,self.glat,self.small_ukidss_im_size)
             os.remove("Temp.fits")
         
@@ -216,7 +231,7 @@ class DistanceObject():
         """
         sex = determine_completeness.do_setup(self.name,survey="UKIDSS")
         k_corr = determine_completeness.do_phot(sex,self.name,survey="UKIDSS")
-        determine_completeness.do_completeness(sex,self.name,survey="UKIDSS",k_corr=k_corr,numtrials = 100)
+        determine_completeness.do_completeness(sex,self.name,survey="UKIDSS",k_corr=k_corr,numtrials = 10)
         self.catalog = atpy.Table(os.path.join(self.data_dir,self.name+"_MyCatalog_UKIDSS.vot"))
         self.catalog.describe()
 
@@ -332,7 +347,7 @@ class DistanceObject():
             testpoints = np.random.rand(n_samp,2)
             testpoints[:,0] = (testpoints[:,0]-0.5)*size_l+cen_l
             testpoints[:,1] = (testpoints[:,1]-0.5)*size_b+cen_b
-            pylab.plot(testpoints[:,0],testpoints[:,1],'.')
+            plt.plot(testpoints[:,0],testpoints[:,1],'.')
 
             total_area = 0
             for poly in all_poly:
@@ -341,7 +356,7 @@ class DistanceObject():
                 print >>g,verts
                 yo = nx.points_inside_poly(testpoints,verts)
                 #print(yo)
-                pylab.plot(testpoints[yo,0],testpoints[yo,1],'.')
+                plt.plot(testpoints[yo,0],testpoints[yo,1],'.')
                 area = yo.sum()/n_samp*(3600*size_l*size_b)
                 total_area = total_area+area
         print(total_area)
