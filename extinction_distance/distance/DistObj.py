@@ -79,7 +79,7 @@ class DistObj():
         self.him = self.data_dir+self.name+"_UKIDSS_H.fits"
         self.kim = self.data_dir+self.name+"_UKIDSS_K.fits"
         self.ukidss_cat = self.data_dir+self.name+"_UKIDSS_cat.fits"
-        self.bgps = self.data_dir+self.name+"_BGPS.fits"
+        self.continuum = self.data_dir+self.name+"_BGPS.fits"
         self.rgbcube = self.data_dir+self.name+"_cube.fits"
         self.rgbcube2d = self.data_dir+self.name+"_cube_2d.fits"
         
@@ -129,12 +129,12 @@ class DistObj():
         else:
             print("UKIDSS catalog already downloaded. Use clobber=True to fetch new versions.")
             
-    def get_bgps(self,clobber=False):
-        if (not os.path.isfile(self.bgps)) or clobber:
+    def get_continuum(self,clobber=False):
+        if (not os.path.isfile(self.continuum)) or clobber:
             print("Fetching BGPS cutout from server...")
             image = Magpis.get_images(coordinates.Galactic(self.glon, self.glat,
                     unit=(u.deg,u.deg)), image_size=self.ukidss_im_size, survey='bolocam')
-            fits.writeto(self.bgps,
+            fits.writeto(self.continuum,
                          image[0].data,image[0].header,clobber=clobber)
         else:
             print("BGPS image already downloaded. Use clobber=True to fetch new versions.")
@@ -187,6 +187,13 @@ class DistObj():
         yy,xx = np.indices(img.shape)
 
         img[img!=img] = 0
+        
+        #Set the borders of an image to be zero (blank) so that all contours close
+        img[0,:] = 0.0
+        img[-1,:] = 0.0
+        img[:,0] = 0.0
+        img[:,-1] = 0.0
+        
         C = _cntr.Cntr(yy,xx,img)
         paths = [p for p in C.trace(contour_level) if p.ndim==2]
 
@@ -240,7 +247,7 @@ class DistObj():
                              vmin_b = b1, vmax_b = b2)
         f = aplpy.FITSFigure(self.rgbcube2d)
         f.show_rgb(self.rgbpng)
-        f.show_contour(self.bgps,levels=[self.contour_level],convention='calabretta',colors='white')
+        f.show_contour(self.continuum,levels=[self.contour_level],convention='calabretta',colors='white')
         f.save(self.contour_check)
 
 
