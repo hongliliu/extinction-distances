@@ -187,6 +187,13 @@ class DistObj():
         yy,xx = np.indices(img.shape)
 
         img[img!=img] = 0
+        
+        #Set the borders of an image to be zero (blank) so that all contours close
+        img[0,:] = 0.0
+        img[-1,:] = 0.0
+        img[:,0] = 0.0
+        img[:,-1] = 0.0
+        
         C = _cntr.Cntr(yy,xx,img)
         paths = [p for p in C.trace(contour_level) if p.ndim==2]
 
