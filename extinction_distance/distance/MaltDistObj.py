@@ -34,6 +34,7 @@ from collections import defaultdict
 from matplotlib.path import Path
 
 import matplotlib._cntr as _cntr
+import DistObj
 
 from extinction_distance.distance import determine_distance
 
@@ -44,7 +45,7 @@ import montage_wrapper as montage
 from astroquery.vista import Vista
 from astroquery.magpis import Magpis
 
-class MaltDistObj(DistObj):
+class MaltDistObj(DistObj.DistObj):
     def __init__(self,name,coords):
         self.name = name
         self.glon,self.glat = coords
@@ -101,7 +102,7 @@ class MaltDistObj(DistObj):
                                             image_width=self.vista_im_size)
                 #This makes a big assumption that the first VISTA image is the one we want
                 fits.writeto(filename,
-                             images[0][1].data,images[0][1].header,clobber=clobber)
+                             images[0][1].data,images[0][1].header,clobber=clobber,output_verify='ignore')
         else:
             print("VISTA image already downloaded. Use clobber=True to fetch new versions.")
                          
