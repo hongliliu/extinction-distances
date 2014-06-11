@@ -148,7 +148,7 @@ class DistObj():
         
         if (not os.path.isfile(self.model)) or clobber:
             print("Fetching Besancon model from server...")
-            besancon_model = besancon.Besancon.query(email='jonathan.b.foster@yale.edu',
+            besancon_model = besancon.Besancon.query(email='adrian.gutierrez@yale.edu',
                                             glon=self.glon,glat=self.glat,
                                             smallfield=True,
                                             area = 0.04,
@@ -192,13 +192,25 @@ class DistObj():
 
         wcs_paths = [wcs.wcs_pix2world(p,0) for p in paths]
 
+
+        #Debugging code
+        #plt.clf()
+        #ya = wcs_paths[16]
+        #plt.plot(ya[:,0],ya[:,1])
+        #plt.savefig("contour_check.png")
+
+
         index = 0
         if len(wcs_paths) > 1:
             print("More than one contour")
             for i,wcs_path in enumerate(wcs_paths):
+                #if i > 10:
+                #    print(i)
+                #    print(wcs_path)
                 path = Path(wcs_path)        
                 if path.contains_point((self.glon,self.glat)):
                     index = i
+                    print("This was the contour containing the center")
             self.contours = wcs_paths[index]
         else:
             self.contours =  wcs_paths[0]
@@ -287,7 +299,7 @@ class DistObj():
         print("arcminutes")
         self.allblue+=blue
         self.n_blue +=n_blue
-        self.model_data = self.load_besancon(self.model,write=False) #Read in the Besancon model
+        self.model_data = self.load_besancon() #Read in the Besancon model
         percenterror = 4*math.sqrt(self.n_blue)/self.n_blue
         self.density = self.allblue/self.total_poly_area
         self.density_upperlim = (((self.allblue)/self.total_poly_area)

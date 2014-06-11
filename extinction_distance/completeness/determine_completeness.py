@@ -225,6 +225,7 @@ def do_completeness(sex,source,contours,survey="UKIDSS",k_corr = 0,numtrials=50)
 
     recovery = np.zeros((numtrials,len(mags)))
     for c in range(numtrials):
+        print("Starting run #"+str(c))
         d,h = fits.getdata(os.path.join(source+"_data",source+"_"+survey+"_K.fits"),header=True)
         w = wcs.WCS(h)
         #all_poly = parse_ds9_regions(os.path.join(source+"_data",source+".reg"))
@@ -262,6 +263,7 @@ def insert_fake_stars(d,h,mags,all_poly,WCS,sex,survey="UKIDSS",zp=25.):
             #for poly in all_poly:
             #print(poly)
             verts = np.array(poly,float)
+            print(verts)
             x = np.random.random_sample()*(xsize-size-6)+(size)
             y = np.random.random_sample()*(ysize-size-6)+(size)
             #print(WCS)
@@ -280,8 +282,10 @@ def insert_fake_stars(d,h,mags,all_poly,WCS,sex,survey="UKIDSS",zp=25.):
             #yo = nx.pnpoly(galcoords.l.degrees,galcoords.b.degrees,verts)
             if yo == 1:
             #print(te)
-            #print("is in")
+                print("a star is in the contour")
                 flag_in = True
+            else:
+                print("a star is outside the contour")
         magnitude = mag
         #zp = sex.config['MAG_ZEROPOINT']
         #Now we pass in zp instead
