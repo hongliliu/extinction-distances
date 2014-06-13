@@ -107,7 +107,7 @@ def do_phot(sex,source,survey="UKIDSS"):
         k_correct = 0
 
     if ((k_correct > 0.5) or (k_correct < -0.5)):
-        print("*** Large k-correction ("+k_correct+")***")
+        print("*** Large k-correction ("+str(k_correct)+") ***")
         print("Completeness for "+source+" likely wrong")
 
     print("Doing J photometry...")

@@ -194,32 +194,26 @@ class DistObj():
         img[:,0] = 0.0
         img[:,-1] = 0.0
         
-        C = _cntr.Cntr(yy,xx,img)
+        C = _cntr.Cntr(xx,yy,img)
         paths = [p for p in C.trace(contour_level) if p.ndim==2]
 
         wcs_paths = [wcs.wcs_pix2world(p,0) for p in paths]
 
 
-        #Debugging code
-        #plt.clf()
-        #ya = wcs_paths[16]
-        #plt.plot(ya[:,0],ya[:,1])
-        #plt.savefig("contour_check.png")
-
-
         index = 0
+        self.good_contour = False
+        
         if len(wcs_paths) > 1:
             print("More than one contour")
             for i,wcs_path in enumerate(wcs_paths):
-                #if i > 10:
-                #    print(i)
-                #    print(wcs_path)
                 path = Path(wcs_path)        
                 if path.contains_point((self.glon,self.glat)):
                     index = i
                     print("This was the contour containing the center")
+                    self.good_contour = True
             self.contours = wcs_paths[index]
         else:
+            self.good_contour = True
             self.contours =  wcs_paths[0]
         self.contour_area = self.calc_contour_area(self.contours)
         
@@ -233,7 +227,7 @@ class DistObj():
         from extinction_distance.support import zscale
         print("Making color-contour checkimage...")
         if (not os.path.isfile(self.rgbcube)) or clobber:
-            aplpy.make_rgb_cube([self.kim,self.him,self.jim],self.rgbcube)
+            aplpy.make_rgb_cube([self.kim,self.him,self.jim],self.rgbcube,north=True,system="GAL")
         k = fits.getdata(self.kim)
         r1,r2 = zscale.zscale(k)
         h = fits.getdata(self.him)
@@ -247,7 +241,9 @@ class DistObj():
                              vmin_b = b1, vmax_b = b2)
         f = aplpy.FITSFigure(self.rgbcube2d)
         f.show_rgb(self.rgbpng)
-        f.show_contour(self.continuum,levels=[self.contour_level],convention='calabretta',colors='white')
+        f.show_markers([self.glon],[self.glat])
+        f.show_polygons([self.contours],edgecolor='cyan',linewidth=2)
+        #f.show_contour(self.continuum,levels=[self.contour_level],convention='calabretta',colors='white')
         f.save(self.contour_check)
 
 
@@ -271,13 +267,18 @@ class DistObj():
         """
         from extinction_distance.completeness import determine_completeness
         
-        sex = determine_completeness.do_setup(self.name,survey="UKIDSS")
-        k_corr = determine_completeness.do_phot(sex,self.name,survey="UKIDSS")
-        if (force_completeness) or (not os.path.isfile(self.completeness_filename)):
-            determine_completeness.do_completeness(sex,self.name,self.contours,survey="UKIDSS",k_corr=k_corr,numtrials = 100)
-        self.catalog = atpy.Table(os.path.join(self.data_dir,self.name+"_MyCatalog_UKIDSS.vot"))
-        self.catalog.describe()
-    
+        
+        if self.contour_area > 0.0001 and self.good_contour:
+            sex = determine_completeness.do_setup(self.name,survey="UKIDSS")
+            k_corr = determine_completeness.do_phot(sex,self.name,survey="UKIDSS")
+            if (force_completeness) or (not os.path.isfile(self.completeness_filename)):
+                determine_completeness.do_completeness(sex,self.name,self.contours,survey="UKIDSS",k_corr=k_corr,numtrials = 100)
+            self.catalog = atpy.Table(os.path.join(self.data_dir,self.name+"_MyCatalog_UKIDSS.vot"))
+            self.catalog.describe()
+        else:
+            print("Bad contour (too small, or does not contain center point)")
+            raise(ValueError)
+            
     def do_distance_estimate(self):
         """
         Calculate the extinction distance
@@ -307,6 +308,7 @@ class DistObj():
         self.allblue+=blue
         self.n_blue +=n_blue
         self.model_data = self.load_besancon() #Read in the Besancon model
+        #print(self.model_data)
         percenterror = 4*math.sqrt(self.n_blue)/self.n_blue
         self.density = self.allblue/self.total_poly_area
         self.density_upperlim = (((self.allblue)/self.total_poly_area)
@@ -445,7 +447,7 @@ class DistObj():
 
         print(completeness[...,0])
 
-        f = interp1d(completeness[...,0],completeness[...,1],kind='cubic')
+        f = interp1d(completeness[...,0],completeness[...,1],kind='linear')
 
         good = catalog.where((catalog.KMag < kupperlim) & (catalog.KMag > klowerlim))
         in_contour = good.where(good.CloudMask == 1)
@@ -459,7 +461,7 @@ class DistObj():
                                   blue_in_contour.JMag-blue_in_contour.KMag)
 
         compfactor = f(blue_in_contour.KMag)
-        #print(compfactor)
+        print(compfactor)
         #print(blue_in_contour)
         #Hack. Really just wants np.ones()/compfactor
         blue_stars = (blue_in_contour.KMag)/(blue_in_contour.KMag)/compfactor
