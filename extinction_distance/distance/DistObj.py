@@ -74,6 +74,7 @@ class DistObj():
         self.ukidss_directory = "" # XXX This needs to point to a way to save XXX
         self.ukidss_im_size = 6*u.arcmin #Size of UKIDSS cutout (symmetric) in arcminutes
         self.small_ukidss_im_size = 3*u.arcmin #Size of UKIDSS image for Sextractor
+        self.continuum_im_size = 2*u.arcmin
         
         self.contour_level = 0.1 #This is for BGPS
         
@@ -135,7 +136,7 @@ class DistObj():
         if (not os.path.isfile(self.continuum)) or clobber:
             print("Fetching BGPS cutout from server...")
             image = Magpis.get_images(coordinates.Galactic(self.glon, self.glat,
-                    unit=(u.deg,u.deg)), image_size=self.ukidss_im_size, survey='bolocam')
+                    unit=(u.deg,u.deg)), image_size=self.continuum_im_size, survey='bolocam')
             fits.writeto(self.continuum,
                          image[0].data,image[0].header,clobber=clobber)
         else:
@@ -150,7 +151,7 @@ class DistObj():
         
         if (not os.path.isfile(self.model)) or clobber:
             print("Fetching Besancon model from server...")
-            besancon_model = besancon.Besancon.query(email='jonathan.b.foster@yale.edu',
+            besancon_model = besancon.Besancon.query(email='adrian.gutierrez@yale.edu',
                                             glon=self.glon,glat=self.glat,
                                             smallfield=True,
                                             area = 0.04,
@@ -187,22 +188,30 @@ class DistObj():
         img[:,0] = 0.0
         img[:,-1] = 0.0
         
-        C = _cntr.Cntr(yy,xx,img)
+        C = _cntr.Cntr(xx,yy,img)
         paths = [p for p in C.trace(contour_level) if p.ndim==2]
 
         wcs_paths = [wcs.wcs_pix2world(p,0) for p in paths]
 
+
         index = 0
+        self.good_contour = False
+        
         if len(wcs_paths) > 1:
             print("More than one contour")
             for i,wcs_path in enumerate(wcs_paths):
-                path = Path(wcs_path)        
+                path = Path(wcs_path)
+                print(path)
                 if path.contains_point((self.glon,self.glat)):
                     index = i
+                    print("This was the contour containing the center")
+                    self.good_contour = True
             self.contours = wcs_paths[index]
         else:
+            self.good_contour = True
             self.contours =  wcs_paths[0]
-            
+        if not self.good_contour:
+            self.contours = None
         self.contour_area = self.calc_contour_area(self.contours)
         
         #Need to find a way to ONLY select the contour closest to our cloud position!!!
@@ -215,7 +224,7 @@ class DistObj():
         from extinction_distance.support import zscale
         print("Making color-contour checkimage...")
         if (not os.path.isfile(self.rgbcube)) or clobber:
-            aplpy.make_rgb_cube([self.kim,self.him,self.jim],self.rgbcube)
+            aplpy.make_rgb_cube([self.kim,self.him,self.jim],self.rgbcube,north=True,system="GAL")
         k = fits.getdata(self.kim)
         r1,r2 = zscale.zscale(k)
         h = fits.getdata(self.him)
@@ -229,7 +238,9 @@ class DistObj():
                              vmin_b = b1, vmax_b = b2)
         f = aplpy.FITSFigure(self.rgbcube2d)
         f.show_rgb(self.rgbpng)
-        f.show_contour(self.continuum,levels=[self.contour_level],convention='calabretta',colors='white')
+        f.show_markers([self.glon],[self.glat])
+        f.show_polygons([self.contours],edgecolor='cyan',linewidth=2)
+        #f.show_contour(self.continuum,levels=[self.contour_level],convention='calabretta',colors='white')
         f.save(self.contour_check)
 
 
@@ -253,13 +264,18 @@ class DistObj():
         """
         from extinction_distance.completeness import determine_completeness
         
-        sex = determine_completeness.do_setup(self.name,survey="UKIDSS")
-        k_corr = determine_completeness.do_phot(sex,self.name,survey="UKIDSS")
-        if (force_completeness) or (not os.path.isfile(self.completeness_filename)):
-            determine_completeness.do_completeness(sex,self.name,self.contours,survey="UKIDSS",k_corr=k_corr,numtrials = 100)
-        self.catalog = atpy.Table(os.path.join(self.data_dir,self.name+"_MyCatalog_UKIDSS.vot"))
-        self.catalog.describe()
-    
+        
+        if self.contour_area > 0.0001 and self.good_contour:
+            sex = determine_completeness.do_setup(self.name,survey="UKIDSS")
+            k_corr = determine_completeness.do_phot(sex,self.name,survey="UKIDSS")
+            if (force_completeness) or (not os.path.isfile(self.completeness_filename)):
+                determine_completeness.do_completeness(sex,self.name,self.contours,survey="UKIDSS",k_corr=k_corr,numtrials = 100)
+            self.catalog = atpy.Table(os.path.join(self.data_dir,self.name+"_MyCatalog_UKIDSS.vot"))
+            self.catalog.describe()
+        else:
+            print("Bad contour (too small, or does not contain center point)")
+            raise(ValueError)
+            
     def do_distance_estimate(self):
         """
         Calculate the extinction distance
@@ -288,7 +304,8 @@ class DistObj():
         print("arcminutes")
         self.allblue+=blue
         self.n_blue +=n_blue
-        self.model_data = self.load_besancon(self.model,write=False) #Read in the Besancon model
+        self.model_data = self.load_besancon() #Read in the Besancon model
+        #print(self.model_data)
         percenterror = 4*math.sqrt(self.n_blue)/self.n_blue
         self.density = self.allblue/self.total_poly_area
         self.density_upperlim = (((self.allblue)/self.total_poly_area)
@@ -427,7 +444,7 @@ class DistObj():
 
         print(completeness[...,0])
 
-        f = interp1d(completeness[...,0],completeness[...,1],kind='cubic')
+        f = interp1d(completeness[...,0],completeness[...,1],kind='linear')
 
         good = catalog.where((catalog.KMag < kupperlim) & (catalog.KMag > klowerlim))
         in_contour = good.where(good.CloudMask == 1)
@@ -441,7 +458,7 @@ class DistObj():
                                   blue_in_contour.JMag-blue_in_contour.KMag)
 
         compfactor = f(blue_in_contour.KMag)
-        #print(compfactor)
+        print(compfactor)
         #print(blue_in_contour)
         #Hack. Really just wants np.ones()/compfactor
         blue_stars = (blue_in_contour.KMag)/(blue_in_contour.KMag)/compfactor

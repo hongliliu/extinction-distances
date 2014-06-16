@@ -28,18 +28,20 @@ def do_besancon_estimate(model_data,kupperlim,klowerlim,colorcut,cloud,upperdens
     Mags_per_kpc = 0.7
 
     for cloud_distance in cloud_distances:
-        temp_model = copy.deepcopy(diffuse_model)
+        #print(cloud_distance)
+        #temp_model = copy.deepcopy(diffuse_model)
         #temp_model = read_besancon(model_file)
+        temp_model=diffuse_model
 
-        foreground = temp_model.where((temp_model['Dist'] <= cloud_distance/1000.))
-
-        try:
-            foreground.add_column('corrj',foreground['J-K']+foreground['K'] + Mags_per_kpc*0.276*foreground['Dist'])
-            foreground.add_column('corrk',foreground['K'] + Mags_per_kpc*0.114*foreground['Dist'])
-        except ValueError:
-            #Some model files don't have K, but do have V and V-K
-            foreground.add_column('corrj',foreground['J-K']+(foreground['V']-foreground['V-K']) + Mags_per_kpc*0.276*foreground['Dist'])
-            foreground.add_column('corrk',(foreground['V']-foreground['V-K']) + Mags_per_kpc*0.114*foreground['Dist'])
+        foreground = temp_model[temp_model['Dist'] <= cloud_distance/1000.]
+        #print(foreground)
+        #try:
+        foreground['corrj'] = foreground['J-K']+foreground['K'] + Mags_per_kpc*0.276*foreground['Dist']
+        foreground['corrk'] = foreground['K'] + Mags_per_kpc*0.114*foreground['Dist']
+        #except ValueError:
+        #    #Some model files don't have K, but do have V and V-K
+        #    foreground.add_column('corrj',foreground['J-K']+(foreground['V']-foreground['V-K']) + Mags_per_kpc*0.276*foreground['Dist'])
+        #    foreground.add_column('corrk',(foreground['V']-foreground['V-K']) + Mags_per_kpc*0.114*foreground['Dist'])
 
         J_min_K = foreground[(foreground['corrk'] < kupperlim) & (foreground['corrk'] > klowerlim) & (foreground['corrj']-foreground['corrk'] < colorcut)]
         #The 25/3600. takes us to per square arcmin for a field of 0.04 sq degree
