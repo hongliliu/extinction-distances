@@ -204,17 +204,57 @@ class DistObj():
                 print(path)
                 if path.contains_point((self.glon,self.glat)):
                     index = i
-                    print("This was the contour containing the center")
                     self.good_contour = True
+                    print("This was the contour containing the center")
             self.contours = wcs_paths[index]
         else:
             self.good_contour = True
             self.contours =  wcs_paths[0]
+        
+        #This selects a contour containing the center
+        #Now we trim the contour to the boundaries of the UKIDSS image
+        if self.good_contour:
+            #And check to see which contour (if any) contains the center
+            self.good_contour = False
+            #Find the boundaries of the UKIDSS (K-band image) in Galactic coordinates
+            h = fits.getheader(self.kim)
+            xmin = 0
+            xmax = h['NAXIS1']
+            ymin = 0
+            ymax = h['NAXIS2']
+            wcs = pywcs.WCS(h)
+            corners = wcs.wcs_pix2world([[xmin,ymin],[xmin,ymax],[xmax,ymax],[xmax,ymin]],0)
+            gals = []
+            for coord in corners:
+                c = coordinates.ICRS(ra=coord[0],dec=coord[1],unit=[u.deg,u.deg])
+                gal = c.transform_to(coordinates.Galactic)
+                gals.append(gal)
+            mycoords = []
+            for gal in gals:
+                l,b = gal.l.degree,gal.b.degree
+                mycoords.append((l,b))
+        
+            p1 = shapely.geometry.Polygon(self.contours)
+            p1.buffer(0)
+            p2 = shapely.geometry.Polygon(mycoords)
+            ya = p1.intersection(p2)
+            try:
+                self.contours = ya.exterior.coords.xy
+            except AttributeError: #MultiPolygon
+                 for j,poly in enumerate(ya):
+                    path = Path(poly.exterior.coords.xy)
+                    if path.contains_point((self.glon,self.glat)):
+                        self.goood_contour = True
+                        index = i
+                        print("This was the contour containing the center")
+                        self.contours = poly.exterior.coords.xy
+        
         if not self.good_contour:
             self.contours = None
+
         self.contour_area = self.calc_contour_area(self.contours)
+
         
-        #Need to find a way to ONLY select the contour closest to our cloud position!!!
         
     def show_contours_on_threecolor(self, color='c',clobber=False):
         """
