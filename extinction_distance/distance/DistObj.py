@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+# python
 # encoding: utf-8
 """
 DistanceObject.py
@@ -48,7 +48,10 @@ from extinction_distance.distance import determine_distance
 #Sextractor and montage are required
 import montage_wrapper as montage
 
-import shapely #Necessary for contour code
+#Double import fixes some strange bug?
+import shapely
+import shapely.geometry #Necessary for contour code
+
 
 from astroquery.ukidss import Ukidss
 from astroquery.magpis import Magpis
@@ -201,7 +204,7 @@ class DistObj():
             print("More than one contour")
             for i,wcs_path in enumerate(wcs_paths):
                 path = Path(wcs_path)
-                print(path)
+                #print(path)
                 if path.contains_point((self.glon,self.glat)):
                     index = i
                     self.good_contour = True
@@ -233,26 +236,37 @@ class DistObj():
             for gal in gals:
                 l,b = gal.l.degree,gal.b.degree
                 mycoords.append((l,b))
-        
             p1 = shapely.geometry.Polygon(self.contours)
             p1.buffer(0)
             p2 = shapely.geometry.Polygon(mycoords)
             ya = p1.intersection(p2)
+            print(ya)
             try:
-                self.contours = ya.exterior.coords.xy
+                mycontours = []
+                xx,yy = ya.exterior.coords.xy
+                for ix,iy in zip(xx,yy):
+                    mycontours.append((ix,iy))
+                self.contours = np.array(mycontours)
+                self.good_contour = True
             except AttributeError: #MultiPolygon
-                 for j,poly in enumerate(ya):
+                mycontours = []
+                for j,poly in enumerate(ya):
                     path = Path(poly.exterior.coords.xy)
                     if path.contains_point((self.glon,self.glat)):
-                        self.goood_contour = True
+                        self.good_contour = True
                         index = i
                         print("This was the contour containing the center")
-                        self.contours = poly.exterior.coords.xy
+                        xx,yy = poly.exterior.coords.xy
+                        for ix,iy in zip(xx,yy):
+                            mycontours.append((ix,iy))
+                        self.contours = np.array(mycontours)
+                        
+        self.contour_area = self.calc_contour_area(self.contours)
         
         if not self.good_contour:
+            print("######## No good contour found ########")
             self.contours = None
-
-        self.contour_area = self.calc_contour_area(self.contours)
+            self.contour_area = 0
 
         
         
