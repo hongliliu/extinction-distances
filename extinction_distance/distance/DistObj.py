@@ -172,18 +172,9 @@ class DistObj():
 
         header = hdulist[0].header
         img = hdulist[0].data
-        #hdulist.close()
-
-        # from Foster 2012
-        #av_to_jy = 6.77e22/9.4e20 # cm^-2 / Jy / (cm^-2 / AV) = AV/Jy
-        #if header.get('BGPSVERS').strip()=='1.0':
-        #av_to_jy /= 1.5
-
         contour_level = self.contour_level #10 av in Jy?
-        #av / av_to_jy
 
         wcs = pywcs.WCS(header)
-        #wcsgrid = wcs.wcs_pix2world( np.array(zip(np.arange(wcs.naxis1),np.arange(wcs.naxis2))), 0 ).T
         yy,xx = np.indices(img.shape)
 
         img[img!=img] = 0
