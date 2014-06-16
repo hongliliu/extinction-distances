@@ -72,6 +72,7 @@ class DistObj():
         self.ukidss_directory = "" # XXX This needs to point to a way to save XXX
         self.ukidss_im_size = 6*u.arcmin #Size of UKIDSS cutout (symmetric) in arcminutes
         self.small_ukidss_im_size = 3*u.arcmin #Size of UKIDSS image for Sextractor
+        self.continuum_im_size = 2*u.arcmin
         
         self.contour_level = 0.1 #This is for BGPS
         
@@ -133,7 +134,7 @@ class DistObj():
         if (not os.path.isfile(self.continuum)) or clobber:
             print("Fetching BGPS cutout from server...")
             image = Magpis.get_images(coordinates.Galactic(self.glon, self.glat,
-                    unit=(u.deg,u.deg)), image_size=self.ukidss_im_size, survey='bolocam')
+                    unit=(u.deg,u.deg)), image_size=self.continuum_im_size, survey='bolocam')
             fits.writeto(self.continuum,
                          image[0].data,image[0].header,clobber=clobber)
         else:
@@ -206,7 +207,8 @@ class DistObj():
         if len(wcs_paths) > 1:
             print("More than one contour")
             for i,wcs_path in enumerate(wcs_paths):
-                path = Path(wcs_path)        
+                path = Path(wcs_path)
+                print(path)
                 if path.contains_point((self.glon,self.glat)):
                     index = i
                     print("This was the contour containing the center")
@@ -215,6 +217,8 @@ class DistObj():
         else:
             self.good_contour = True
             self.contours =  wcs_paths[0]
+        if not self.good_contour:
+            self.contours = None
         self.contour_area = self.calc_contour_area(self.contours)
         
         #Need to find a way to ONLY select the contour closest to our cloud position!!!
