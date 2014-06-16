@@ -48,6 +48,8 @@ from extinction_distance.distance import determine_distance
 #Sextractor and montage are required
 import montage_wrapper as montage
 
+import shapely #Necessary for contour code
+
 from astroquery.ukidss import Ukidss
 from astroquery.magpis import Magpis
 
@@ -200,6 +202,7 @@ class DistObj():
             self.contours = wcs_paths[index]
         else:
             self.contours =  wcs_paths[0]
+            
         self.contour_area = self.calc_contour_area(self.contours)
         
         #Need to find a way to ONLY select the contour closest to our cloud position!!!
