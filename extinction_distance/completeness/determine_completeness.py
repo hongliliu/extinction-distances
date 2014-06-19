@@ -155,6 +155,8 @@ def do_phot(sex,source,survey="UKIDSS"):
                 L.append(galcoords.l.degree)
                 B.append(galcoords.b.degree)
 
+    JminK = np.array(Jmag) - np.array(Kmag)
+
     #print(Kmag)
     t = atpy.Table()
     t.add_column('RA',ra)
@@ -164,6 +166,8 @@ def do_phot(sex,source,survey="UKIDSS"):
 
     t.add_column('JMag',Jmag)
     t.add_column('KMag',Kmag)
+    t.add_column('JminK',JminK)
+    
     #t.describe()
 
     try:
