@@ -42,7 +42,12 @@ def calibrate(source,filtername):
                 errs.append(np.sqrt(t[int(j)][ukidss_err]**2+my_catalog[i]['MAGERR_APER']**2))
 
     a = np.average(np.array(my_mag)-np.array(ukidss_mag),weights = np.array(errs))
+    b = np.median(np.array(my_mag)-np.array(ukidss_mag))
+    poss_zp = np.array([a,b])
+    ii = np.argmin(np.absolute(poss_zp))
+    zp = poss_zp[ii]
+    #zp = np.min(a,b)
     print(source)
     print(filtername)
-    print(a)
-    return(a)
+    print("ZP: "+str(round(zp,3)))
+    return(zp)

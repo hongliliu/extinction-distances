@@ -107,7 +107,7 @@ def do_phot(sex,source,survey="UKIDSS"):
         k_correct = 0
 
     if ((k_correct > 0.5) or (k_correct < -0.5)):
-        print("*** Large k-correction ("+str(k_correct)+") ***")
+        print("*** Large ZP correction for K ("+str(k_correct)+") ***")
         print("Completeness for "+source+" likely wrong")
 
     print("Doing J photometry...")
@@ -150,7 +150,7 @@ def do_phot(sex,source,survey="UKIDSS"):
                 Kmag.append(Kcatalog[i]['MAG_APER']-k_correct)
 
                 Jmag.append(Jcatalog[int(j)]['MAG_APER']-j_correct)
-                gc = coordinates.ICRSCoordinates(Kcatalog[i]['ALPHA_J2000'],Kcatalog[i]['DELTA_J2000'], unit=(u.degree, u.degree))
+                gc = coordinates.ICRS(Kcatalog[i]['ALPHA_J2000'],Kcatalog[i]['DELTA_J2000'], unit=(u.degree, u.degree))
                 galcoords = gc.galactic
                 L.append(galcoords.l.degree)
                 B.append(galcoords.b.degree)
@@ -263,7 +263,7 @@ def insert_fake_stars(d,h,mags,all_poly,WCS,sex,survey="UKIDSS",zp=25.):
             #for poly in all_poly:
             #print(poly)
             verts = np.array(poly,float)
-            print(verts)
+            #print(verts)
             x = np.random.random_sample()*(xsize-size-6)+(size)
             y = np.random.random_sample()*(ysize-size-6)+(size)
             #print(WCS)
@@ -273,7 +273,7 @@ def insert_fake_stars(d,h,mags,all_poly,WCS,sex,survey="UKIDSS",zp=25.):
             radec = np.array(WCS.wcs_pix2world(pixcrd,0))
             #print(radec)
 
-            gc = coordinates.ICRSCoordinates(radec[0][0],radec[0][1], unit=(u.degree, u.degree))
+            gc = coordinates.ICRS(radec[0][0],radec[0][1], unit=(u.degree, u.degree))
             galcoords = gc.galactic
             #L.append(galcoords.l.degrees)
             #B.append(galcoords.b.degrees)
@@ -282,10 +282,11 @@ def insert_fake_stars(d,h,mags,all_poly,WCS,sex,survey="UKIDSS",zp=25.):
             #yo = nx.pnpoly(galcoords.l.degrees,galcoords.b.degrees,verts)
             if yo == 1:
             #print(te)
-                print("a star is in the contour")
+                #print("a star is in the contour")
                 flag_in = True
             else:
-                print("a star is outside the contour")
+                pass
+                #print("a star is outside the contour")
         magnitude = mag
         #zp = sex.config['MAG_ZEROPOINT']
         #Now we pass in zp instead
@@ -314,7 +315,7 @@ def insert_fake_star(d,h,mag):
     zp = 25.
     expfactor = (magnitude - zp)/(-2.5)
     counts = math.pow(10.,expfactor)
-    print(counts)
+    #print(counts)
     g = gauss_kern(size,counts) #5 is rough guess for FWHM
     d[y-size:y+size+1,x-size:x+size+1] += g #Damn backward numpy arrays
 

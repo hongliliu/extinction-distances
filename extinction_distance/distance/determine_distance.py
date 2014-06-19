@@ -22,7 +22,7 @@ def do_besancon_estimate(model_data,kupperlim,klowerlim,colorcut,cloud,upperdens
     """We assume that all model files are of the same size -- 0.04 sq degree"""
     blue_star_density_model = []
     diffuse_model = model_data
-    cloud_distances = np.arange(0,8000,50) #Possible cloud distances in pc
+    cloud_distances = np.arange(0,10000,50) #Possible cloud distances in pc
 
 
     Mags_per_kpc = 0.7

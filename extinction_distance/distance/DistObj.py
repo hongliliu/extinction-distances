@@ -64,7 +64,7 @@ class DistObj():
         self.glon = float(self.glon)
 
         #print(self.glat)
-        self.gc = coordinates.GalacticCoordinates(l=self.glon, b=self.glat, unit=(u.degree, u.degree))
+        self.gc = coordinates.Galactic(l=self.glon, b=self.glat, unit=(u.degree, u.degree))
         #self.eq = self.gc.fk5
 
         self.data_dir = self.name+"_data/"
@@ -77,7 +77,7 @@ class DistObj():
         self.ukidss_directory = "" # XXX This needs to point to a way to save XXX
         self.ukidss_im_size = 6*u.arcmin #Size of UKIDSS cutout (symmetric) in arcminutes
         self.small_ukidss_im_size = 3*u.arcmin #Size of UKIDSS image for Sextractor
-        self.continuum_im_size = 2*u.arcmin
+        self.continuum_im_size = 4*u.arcmin
         
         self.contour_level = 0.1 #This is for BGPS
         
@@ -105,7 +105,8 @@ class DistObj():
 
         """
         #Get images
-        if (not os.path.isfile(self.kim)) or clobber:
+        if (not (os.path.isfile(self.kim) and os.path.isfile(self.him) 
+            and os.path.isfile(self.jim)) or clobber):
             print("Fetching UKIDSS images from server...")
             for filtername,filename in zip(["J","H","K"],(self.jim,self.him,self.kim)):
                 images = Ukidss.get_images(coordinates.Galactic(l=self.glon, b=self.glat, 
@@ -114,7 +115,7 @@ class DistObj():
                                             image_width=self.ukidss_im_size)
                 #This makes a big assumption that the first UKIDSS image is the one we want
                 fits.writeto(filename,
-                             images[0][1].data,images[0][1].header,clobber=clobber)
+                             images[0][1].data,images[0][1].header,clobber=True)
         else:
             print("UKIDSS image already downloaded. Use clobber=True to fetch new versions.")
                          
@@ -158,7 +159,7 @@ class DistObj():
                                             glon=self.glon,glat=self.glat,
                                             smallfield=True,
                                             area = 0.04,
-                                            mag_limits = {"K":(5,19)},
+                                            mag_limits = {"K":(5,17)},
                                             extinction = 0.0,
                                             verbose = True,
                                             retrieve_file=True,
@@ -169,7 +170,7 @@ class DistObj():
             
                                             
             
-    def get_contours(self, fitsfile, av=10.):
+    def get_contours(self, fitsfile, manual_contour_level=None):
         """
         Given a Bolocam FITS file, return the contours at a given flux level
         """
@@ -178,7 +179,10 @@ class DistObj():
 
         header = hdulist[0].header
         img = hdulist[0].data
-        contour_level = self.contour_level #10 av in Jy?
+        if not manual_contour_level:
+            contour_level = self.contour_level #10 av in Jy?
+        else:
+            contour_level = manual_contour_level
 
         wcs = pywcs.WCS(header)
         yy,xx = np.indices(img.shape)
@@ -240,7 +244,7 @@ class DistObj():
             p1.buffer(0)
             p2 = shapely.geometry.Polygon(mycoords)
             ya = p1.intersection(p2)
-            print(ya)
+            #print(ya)
             try:
                 mycontours = []
                 xx,yy = ya.exterior.coords.xy
@@ -293,7 +297,10 @@ class DistObj():
         f = aplpy.FITSFigure(self.rgbcube2d)
         f.show_rgb(self.rgbpng)
         f.show_markers([self.glon],[self.glat])
-        f.show_polygons([self.contours],edgecolor='cyan',linewidth=2)
+        try:
+            f.show_polygons([self.contours],edgecolor='cyan',linewidth=2)
+        except:
+            pass
         #f.show_contour(self.continuum,levels=[self.contour_level],convention='calabretta',colors='white')
         f.save(self.contour_check)
 
