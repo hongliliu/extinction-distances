@@ -1,0 +1,582 @@
+#!/usr/bin/env python
+# encoding: utf-8
+"""
+BaseDistObj.py
+
+A basic object to calculate extinction distances
+via the Foster et al. (2012) Blue Number Count Method.
+
+Should be subclassed in different regions to
+use different different survey data.
+
+Roughly l > 0 can do UKIDSS/BGPS
+and l < 0 can do VVV/ATLASGAL
+
+"""
+
+#These are basic
+import sys
+import os
+import unittest
+import subprocess
+import pickle
+import math
+import os.path
+
+#These are necessary imports
+import numpy as np
+import atpy
+import aplpy
+from astropy import wcs
+from astropy import coordinates
+from astropy import units as u
+import astropy.wcs as pywcs
+from astropy.io import fits
+import matplotlib.pyplot as plt #For contouring and display
+from scipy.interpolate import interp1d
+from collections import defaultdict
+from matplotlib.path import Path
+
+import matplotlib._cntr as _cntr
+
+from extinction_distance.distance import determine_distance
+
+#These are more complicated additions
+#Sextractor and montage are required
+import montage_wrapper as montage
+
+from astroquery.vista import Vista
+from astroquery.magpis import Magpis
+
+class BaseDistObj():
+    def __init__(self,name,coords,nir_survey=None,cont_survey=None):
+        self.name = name
+        self.glon,self.glat = coords
+        self.glat = float(self.glat)
+        self.glon = float(self.glon)
+
+        self.gc = coordinates.Galactic(l=self.glon, b=self.glat, unit=(u.degree, u.degree))
+
+        self.data_dir = self.name+"_data/"
+        try:
+            os.makedirs(self.data_dir)
+        except OSError:
+            pass
+        self.nir_survey = nir_survey
+        self.cont_survey = cont_survey
+
+        self.besancon_area = 0.04*u.deg*u.deg #Area for model in sq. degrees. Large=less sampling error
+        self.nir_directory = "" # XXX This needs to point to a way to save XXX
+        self.nir_im_size = 6*u.arcmin #Size of NIR cutout (symmetric) in arcminutes
+        self.small_nir_im_size = 3*u.arcmin #Size of NIR image for Sextractor
+        self.continuum_im_size = 4*u.arcmin
+        
+        if cont_survey == "BGPS":
+            self.contour_level = 0.1 #This is for BGPS
+        elif cont_survey == "ATLASGAL":
+            self.contour_level = 
+        
+        self.jim = self.data_dir+self.name+"_"+self.nir_survey+"_J.fits"
+        self.him = self.data_dir+self.name+"_"+self.nir_survey+"_H.fits"
+        self.kim = self.data_dir+self.name+"_"+self.nir_survey+"_K.fits"
+        self.nir_cat = self.data_dir+self.name+"_"+self.nir_survey+"_cat.fits"
+        self.continuum = self.data_dir+self.name+"_"+self.cont_survey+".fits"
+        self.rgbcube = self.data_dir+self.name+"_cube.fits"
+        self.rgbcube2d = self.data_dir+self.name+"_cube_2d.fits"
+        
+        self.rgbpng = self.data_dir+self.name+".png"
+        self.contour_check = self.data_dir+self.name+"_contours.png"
+
+        self.model = self.data_dir+self.name+"_model.fits"
+        self.completeness_filename = os.path.join(self.data_dir,self.name+"_completeness_"+self.nir_survey+".pkl")
+    
+    def calculate_continuum_contour_level(cont_survey=None,Ak=2.,T=20.*u.K):
+        """
+        Calculate the appropriate continuum contour level 
+        in the units used for the maps from a given survey.
+        
+        Both ATLASGAL and BGPS are in Jy/beam, so we return
+        those units.
+        """
+        if cont_survey == "BGPS":
+            lam   = 1120. * u.micron
+            theta = 31. * u.arcsec
+            knu   = 0.0114 * u.cm * u.cm / u.g
+        elif cont_survey == "ATLASGAL":
+            lam   = 870. * u.micron
+            theta = 19.2 * u.arcsec 
+            knu   = 0.0185 * u.cm * u.cm / u.g
+        Tdust = T
+        Av = Ak*(1./0.112) #Using Schlegel et al. (1998) value for UKIRT K
+        NH2 = 9.4e20*Av / (u.cm*u.cm) #Bohlin et al. (1978)
+        boltzfac = (1.439*(lam/(u.mm))**(-1)*(Tdust/(10 * u.K))**(-1)).decompose()
+        Snu = NH2 / ((2.02e20 * (1./u.cm) * (1./u.cm)) * 
+                     (np.exp(boltzfac)) *
+                     (knu/(0.01 * u.cm * u.cm/u.g))**(-1) *
+                     (theta/(10*u.arcsec))**(-2) * 
+                     (lam/u.mm)**(3)) / 1000.
+        return(Snu.decompose())
+        
+    def get_ukidss_images(self,clobber=False):
+        """
+        Get UKIDSS data/images for this region.
+        This comes from astropy.astroquery
+
+        Raw data is saved into self.data_dir as 
+        self.name+"_UKIDSS_J.fits"
+
+        """
+        #Get images
+        if (not (os.path.isfile(self.kim) and os.path.isfile(self.him) 
+            and os.path.isfile(self.jim)) or clobber):
+            print("Fetching UKIDSS images from server...")
+            for filtername,filename in zip(["J","H","K"],(self.jim,self.him,self.kim)):
+                images = Ukidss.get_images(coordinates.Galactic(l=self.glon, b=self.glat, 
+                                            unit=(u.deg, u.deg)),
+                                            waveband=filtername,
+                                            image_width=self.ukidss_im_size)
+                #This makes a big assumption that the first UKIDSS image is the one we want
+                fits.writeto(filename,
+                             images[0][1].data,images[0][1].header,clobber=True)
+        else:
+            print("UKIDSS image already downloaded. Use clobber=True to fetch new versions.")
+                         
+    def get_ukidss_cat(self,clobber=False):
+        """
+        Get the UKIDSS catalog
+        Catalog (necessary for zero-point determination) is saved
+        into self.data_dir as
+        self.name+"_UKIDSS_cat.fits"
+        """
+        if (not os.path.isfile(self.ukidss_cat)) or clobber:
+            print("Fetching UKIDSS catalog from server...")
+            
+            table = Ukidss.query_region(coordinates.Galactic(l=self.glon,
+                        b=self.glat,  unit=(u.deg, u.deg)), radius=self.ukidss_im_size)
+            table.write(self.ukidss_cat,format="fits",overwrite=clobber)
+            #Get catalog. We need this to establish zero-points/colours
+        else:
+            print("UKIDSS catalog already downloaded. Use clobber=True to fetch new versions.")
+            
+    def get_continuum(self,clobber=False):
+        if (not os.path.isfile(self.continuum)) or clobber:
+            print("Fetching BGPS cutout from server...")
+            image = Magpis.get_images(coordinates.Galactic(self.glon, self.glat,
+                    unit=(u.deg,u.deg)), image_size=self.continuum_im_size, survey='bolocam')
+            fits.writeto(self.continuum,
+                         image[0].data,image[0].header,clobber=clobber)
+        else:
+            print("BGPS image already downloaded. Use clobber=True to fetch new versions.")
+            
+    def get_model(self,clobber=False):
+        """
+        Get a Besancon model for this region of sky
+        """
+        
+        from astroquery import besancon
+        
+        if (not os.path.isfile(self.model)) or clobber:
+            print("Fetching Besancon model from server...")
+            besancon_model = besancon.Besancon.query(email='adrian.gutierrez@yale.edu',
+                                            glon=self.glon,glat=self.glat,
+                                            smallfield=True,
+                                            area = 0.04,
+                                            mag_limits = {"K":(5,17)},
+                                            extinction = 0.0,
+                                            verbose = True,
+                                            retrieve_file=True,
+                                            rsup=10.)
+            besancon_model.write(self.model,format="fits")
+        else:
+            print("Besancon model already downloaded. Use clobber=True to fetch new versions.")
+            
+                                            
+            
+    def get_contours(self, fitsfile, manual_contour_level=None):
+        """
+        Given a Bolocam FITS file, return the contours at a given flux level
+        """
+        
+        hdulist = fits.open(fitsfile)
+
+        header = hdulist[0].header
+        img = hdulist[0].data
+        if not manual_contour_level:
+            contour_level = self.contour_level #10 av in Jy?
+        else:
+            contour_level = manual_contour_level
+
+        wcs = pywcs.WCS(header)
+        yy,xx = np.indices(img.shape)
+
+        img[img!=img] = 0
+        
+        #Set the borders of an image to be zero (blank) so that all contours close
+        img[0,:] = 0.0
+        img[-1,:] = 0.0
+        img[:,0] = 0.0
+        img[:,-1] = 0.0
+        
+        C = _cntr.Cntr(xx,yy,img)
+        paths = [p for p in C.trace(contour_level) if p.ndim==2]
+
+        wcs_paths = [wcs.wcs_pix2world(p,0) for p in paths]
+
+
+        index = 0
+        self.good_contour = False
+        
+        if len(wcs_paths) > 1:
+            print("More than one contour")
+            for i,wcs_path in enumerate(wcs_paths):
+                path = Path(wcs_path)
+                #print(path)
+                if path.contains_point((self.glon,self.glat)):
+                    index = i
+                    self.good_contour = True
+                    print("This was the contour containing the center")
+            self.contours = wcs_paths[index]
+        else:
+            self.good_contour = True
+            self.contours =  wcs_paths[0]
+        
+        #This selects a contour containing the center
+        #Now we trim the contour to the boundaries of the UKIDSS image
+        if self.good_contour:
+            #And check to see which contour (if any) contains the center
+            self.good_contour = False
+            #Find the boundaries of the UKIDSS (K-band image) in Galactic coordinates
+            h = fits.getheader(self.kim)
+            xmin = 0
+            xmax = h['NAXIS1']
+            ymin = 0
+            ymax = h['NAXIS2']
+            wcs = pywcs.WCS(h)
+            corners = wcs.wcs_pix2world([[xmin,ymin],[xmin,ymax],[xmax,ymax],[xmax,ymin]],0)
+            gals = []
+            for coord in corners:
+                c = coordinates.ICRS(ra=coord[0],dec=coord[1],unit=[u.deg,u.deg])
+                gal = c.transform_to(coordinates.Galactic)
+                gals.append(gal)
+            mycoords = []
+            for gal in gals:
+                l,b = gal.l.degree,gal.b.degree
+                mycoords.append((l,b))
+            p1 = shapely.geometry.Polygon(self.contours)
+            p1.buffer(0)
+            p2 = shapely.geometry.Polygon(mycoords)
+            ya = p1.intersection(p2)
+            #print(ya)
+            try:
+                mycontours = []
+                xx,yy = ya.exterior.coords.xy
+                for ix,iy in zip(xx,yy):
+                    mycontours.append((ix,iy))
+                self.contours = np.array(mycontours)
+                self.good_contour = True
+            except AttributeError: #MultiPolygon
+                mycontours = []
+                for j,poly in enumerate(ya):
+                    path = Path(poly.exterior.coords.xy)
+                    if path.contains_point((self.glon,self.glat)):
+                        self.good_contour = True
+                        index = i
+                        print("This was the contour containing the center")
+                        xx,yy = poly.exterior.coords.xy
+                        for ix,iy in zip(xx,yy):
+                            mycontours.append((ix,iy))
+                        self.contours = np.array(mycontours)
+                        
+        self.contour_area = self.calc_contour_area(self.contours)
+        
+        if not self.good_contour:
+            print("######## No good contour found ########")
+            self.contours = None
+            self.contour_area = 0
+
+        
+        
+    def show_contours_on_threecolor(self, color='c',clobber=False):
+        """
+        Make a three-color image
+
+        """
+        from extinction_distance.support import zscale
+        print("Making color-contour checkimage...")
+        if (not os.path.isfile(self.rgbcube)) or clobber:
+            aplpy.make_rgb_cube([self.kim,self.him,self.jim],self.rgbcube,north=True,system="GAL")
+        k = fits.getdata(self.kim)
+        r1,r2 = zscale.zscale(k)
+        h = fits.getdata(self.him)
+        g1,g2 = zscale.zscale(h)
+        j = fits.getdata(self.jim)
+        b1,b2 = zscale.zscale(j)
+        
+        aplpy.make_rgb_image(self.rgbcube,self.rgbpng,
+                             vmin_r = r1, vmax_r = r2,
+                             vmin_g = g1, vmax_g = g2,
+                             vmin_b = b1, vmax_b = b2)
+        f = aplpy.FITSFigure(self.rgbcube2d)
+        f.show_rgb(self.rgbpng)
+        f.show_markers([self.glon],[self.glat])
+        try:
+            f.show_polygons([self.contours],edgecolor='cyan',linewidth=2)
+        except:
+            pass
+        #f.show_contour(self.continuum,levels=[self.contour_level],convention='calabretta',colors='white')
+        f.save(self.contour_check)
+
+
+    def calc_contour_area(self,xy):
+        """ 
+            Calculates polygon area.
+            x = xy[:,0], y = xy[:,1]
+        """
+        l = len(xy)
+        s = 0.0
+        # Python arrys are zero-based
+        for i in range(l):
+            j = (i+1)%l  # keep index in [0,l)
+            s += (xy[j,0] - xy[i,0])*(xy[j,1] + xy[i,1])
+        return np.abs(0.5*s)
+
+    def make_photo_catalog(self,force_completeness=False):
+        """
+        Reads from photometry parameters
+        Uses the trimmed image data
+        """
+        from extinction_distance.completeness import determine_completeness
+        
+        
+        if self.contour_area > 0.0001 and self.good_contour:
+            sex = determine_completeness.do_setup(self.name,survey="UKIDSS")
+            k_corr = determine_completeness.do_phot(sex,self.name,survey="UKIDSS")
+            if (force_completeness) or (not os.path.isfile(self.completeness_filename)):
+                determine_completeness.do_completeness(sex,self.name,self.contours,survey="UKIDSS",k_corr=k_corr,numtrials = 100)
+            self.catalog = atpy.Table(os.path.join(self.data_dir,self.name+"_MyCatalog_UKIDSS.vot"))
+            self.catalog.describe()
+        else:
+            print("Bad contour (too small, or does not contain center point)")
+            raise(ValueError)
+            
+    def do_distance_estimate(self):
+        """
+        Calculate the extinction distance
+        based on the surface density of blue
+        stars inside the contour and the
+        besancon model.
+        """
+        self.load_data()
+        blue_cut = 1.5 #Magic number for J-K cut. Put this elsewhere
+        kup = 17 #More magic numbers
+        klo = 11
+        self.allblue = 0
+        self.n_blue = 0
+        poly = self.all_poly
+        self.find_stars_in_contour(poly,"UKIDSS")
+        blue,n_blue = self.count_blue_stars_in_contour(self.completeness,
+                                        blue_cut=blue_cut,
+                                        kupperlim = kup,
+                                        klowerlim = klo,
+                                        ph_qual = False,
+                                        catalog=self.catalog,
+                                        plot=True,
+                                        survey="UKIDSS")
+        print("Total area is...")
+        print(self.total_poly_area)
+        print("arcminutes")
+        self.allblue+=blue
+        self.n_blue +=n_blue
+        self.model_data = self.load_besancon() #Read in the Besancon model
+        #print(self.model_data)
+        percenterror = 4*math.sqrt(self.n_blue)/self.n_blue
+        self.density = self.allblue/self.total_poly_area
+        self.density_upperlim = (((self.allblue)/self.total_poly_area)
+                                *(1+percenterror))
+        self.density_lowerlim = (((self.allblue)/self.total_poly_area)
+                                *(1-percenterror))
+        print(self.density)
+        print(self.density_upperlim)
+        print(self.density_lowerlim)
+        d,upp,low = determine_distance.do_besancon_estimate(self.model_data,
+                kup,klo,blue_cut,self,
+                        self.density_upperlim, #Why pass the object and
+                        self.density_lowerlim, #the density?
+                        self.density,survey="UKIDSS")
+        print(d)
+        distance_ukidss = d
+        upper_ukidss = upp
+        lower_ukidss = low
+        print("==== Distance Results ====")
+        print(distance_ukidss)
+        print(lower_ukidss)
+        print(upper_ukidss)
+        print("==========================")
+        self.distance_est = distance_ukidss
+        self.distance_lolim = lower_ukidss
+        self.distance_hilim = upper_ukidss
+        results = {"name":self.name,"glon":self.glon,"glat":self.glat,
+                   "area":self.contour_area,"n_obs_blue":self.n_blue,
+                   "n_est_blue":self.allblue,"dist":self.distance_distance_est,
+                   "dist_lolim":self.distance_lolim,"dist_hilim":self.distance_hilim}
+        return(results)
+        
+    
+    def load_data(self):
+        """
+        Load the previously generated data.
+        Is this really necessary? 
+        """
+        self.all_poly = self.contours
+        self.total_poly_area = self.contour_area*(3600.) #Needs to go to sq arcmin
+        self.load_completeness()
+        #self.load_photo_catalog() #We just keep this around in memory
+                                   #from make_photo_catalog()
+                                   #Not necessarily the best plan
+    
+    def find_stars_in_contour(self,contour,survey):
+        """
+        From the photometry catalog we
+        determine which stars are inside
+        the contour of the cloud.
+        """
+        verts = np.array(contour,float)
+        path = Path(verts)        
+        if survey == "2MASS":
+            points = np.column_stack((self.twomass.L,self.twomass.B))
+            yo = path.contains_points(points)
+            try:
+                self.twomass.add_column("CloudMask",yo,description="If on cloud")
+            except ValueError:
+                self.twomass.CloudMask = self.twomass.CloudMask + yo
+            #self.twomass.write("Modified_2MASS.vot")
+        if survey == "UKIDSS":
+            points = np.column_stack((self.catalog.L,self.catalog.B))
+            yo = path.contains_points(points)
+            try:
+                self.catalog.add_column("CloudMask",yo,description="If on cloud")
+            except ValueError:
+                self.catalog.CloudMask = self.catalog.CloudMask + yo
+    
+    
+    def load_completeness(self):
+        """
+        Load in the saved estimates of completeness.
+        """
+        mag  = np.array([11, 12, 13, 14, 15, 16, 17, 18, 19])
+        g = open(self.completeness_filename,'r')
+        comp = pickle.load(g)
+        g.close()
+        self.completeness = np.column_stack((mag,comp))
+    
+    def load_besancon(self):
+        from astropy.table import Table
+        return(Table.read(self.model))
+     
+    def load_besancon_old(self,filename,write=False):
+        """
+        Read a besancon model file
+        """
+        f = open(filename,'r')
+        lines = f.readlines()
+
+        d = defaultdict(list)
+
+        head_done = False
+        #Enumerate is for debugging code
+        for i,line in enumerate(lines):
+
+            if line.startswith("  Dist"): #Header row
+                head_done = not head_done #Header row is duplicated at end of data
+                headers = line.split()
+                n_head = len(headers)
+            elif head_done == True:
+                line_elements = line.split()
+                if len(line_elements) < n_head: #Age/Mass columns are sometimes conjoined
+                    #print("***** Problem Line Found ****")
+                    #print(line_elements)
+
+                    temp = line_elements[8:]
+                    trouble_entry = line_elements[6]
+                    age = trouble_entry[0]
+                    mass = trouble_entry[1:]
+                    line_elements.append('0')
+                    line_elements[9:] = temp
+                    line_elements[7] = mass
+                    line_elements[6] = age
+                    #print(line_elements)
+                for header,element in zip(headers,line_elements):
+                    d[header].append(float(element))
+
+        #Put into atpy Table.
+        #This is optional, we could just return d
+        t = atpy.Table()
+        for header in headers:
+        #       print(header)
+            t.add_column(header,d[header])
+        t.columns['Dist'].unit = 'kpc'
+        t.columns['Mv'].unit = 'mag'
+        t.columns['Mass'].unit = 'Msun'
+
+        t.add_comment("Bescancon Model")
+
+
+    #       t.describe()
+        if write:
+            t.write("Test.fits")
+        return(t)
+    def count_blue_stars_in_contour(self,completeness,blue_cut=1.3,kupperlim = 15.,klowerlim = 12.,ph_qual = False,plot=False,catalog=None,survey=None):
+        """
+        Determine which of the stars inside
+        the contour are blue. And calculate the
+        areal density of such stars. 
+        """
+
+        print("Reached Count stage")
+
+        print(completeness[...,0])
+
+        f = interp1d(completeness[...,0],completeness[...,1],kind='linear')
+
+        good = catalog.where((catalog.KMag < kupperlim) & (catalog.KMag > klowerlim))
+        in_contour = good.where(good.CloudMask == 1)
+        JminK = in_contour.JMag - in_contour.KMag
+        blue_in_contour = in_contour.where((JminK < blue_cut))
+        blue_full = good.where(((good.JMag - good.KMag) < blue_cut))
+        #Restore this
+        #if plot:
+        #    self.plotcolorhistogram(good.JMag-good.KMag,blue_full.JMag-blue_full.KMag,label="Full_Cloud",survey=survey)
+        self.plot_color_histogram(in_contour.JMag-in_contour.KMag,
+                                  blue_in_contour.JMag-blue_in_contour.KMag)
+
+        compfactor = f(blue_in_contour.KMag)
+        print(compfactor)
+        #print(blue_in_contour)
+        #Hack. Really just wants np.ones()/compfactor
+        blue_stars = (blue_in_contour.KMag)/(blue_in_contour.KMag)/compfactor
+        n_blue = len(blue_in_contour.KMag)
+        print("Number of blue stars in contour:")
+        print(n_blue)
+        print(sum(blue_stars))
+
+        return(sum(blue_stars),n_blue)
+        
+    
+    def plot_color_histogram(self,JminK,JminK_blue):
+        """
+        Make the three check-images
+        1) 3-color image of region
+        2) J-K histogram
+        3) Distance estimate plot
+        """
+        plt.figure()
+        plt.hist(JminK,color='gray',bins=np.arange(-0.2,3.2,0.1))
+        plt.hist(JminK_blue,color='blue',bins=np.arange(-0.2,3.2,0.1))
+        plt.xlabel("J-K [mag]")
+        plt.ylabel("Number of Stars")
+        plt.axvline(x=1.5,ls=":")
+        plt.savefig(self.data_dir+self.name+"_hist.png")
+    
+
+if __name__ == '__main__':
+    unittest.main()
