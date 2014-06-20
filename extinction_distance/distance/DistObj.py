@@ -390,6 +390,15 @@ class DistObj():
         print(lower_ukidss)
         print(upper_ukidss)
         print("==========================")
+        self.distance_est = distance_ukidss
+        self.distance_lolim = lower_ukidss
+        self.distance_hilim = upper_ukidss
+        results = {"name":self.name,"glon":self.glon,"glat":self.glat,
+                   "area":self.contour_area,"n_obs_blue":self.n_blue,
+                   "n_est_blue":self.allblue,"dist":self.distance_distance_est,
+                   "dist_lolim":self.distance_lolim,"dist_hilim":self.distance_hilim}
+        return(results)
+        
     
     def load_data(self):
         """
