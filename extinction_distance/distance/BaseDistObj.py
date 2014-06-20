@@ -45,15 +45,33 @@ from extinction_distance.distance import determine_distance
 #Sextractor and montage are required
 import montage_wrapper as montage
 
-from astroquery.vista import Vista
+import shapely
+import shapely.geometry #Necessary for contour code
+
+
 from astroquery.magpis import Magpis
 
 class BaseDistObj():
     def __init__(self,name,coords,nir_survey=None,cont_survey=None):
+        """
+        A BaseDistObj is defined by name and coordinates
+        In order to do anything useful, you must also 
+        specify the near-infrared survey (nir_survey)
+        and continuum survey (cont_survey) to use.
+        
+        Possible choices are 
+        nir_survey = "UKIDSS" or "VISTA"
+        cont_survey = "BGPS" or "ATLASGAL"
+        """
+        
         self.name = name
         self.glon,self.glat = coords
         self.glat = float(self.glat)
         self.glon = float(self.glon)
+        
+        magpis_lookup = {"BGPS":"bolocam","ATLASGAL":"atlasgal"}
+
+        self.magpis_survey = magpis_lookup[cont_survey]
 
         self.gc = coordinates.Galactic(l=self.glon, b=self.glat, unit=(u.degree, u.degree))
 
@@ -71,10 +89,7 @@ class BaseDistObj():
         self.small_nir_im_size = 3*u.arcmin #Size of NIR image for Sextractor
         self.continuum_im_size = 4*u.arcmin
         
-        if cont_survey == "BGPS":
-            self.contour_level = 0.1 #This is for BGPS
-        elif cont_survey == "ATLASGAL":
-            self.contour_level = 
+        self.contour_level = self.calculate_continuum_level(cont_survey=cont_survey)
         
         self.jim = self.data_dir+self.name+"_"+self.nir_survey+"_J.fits"
         self.him = self.data_dir+self.name+"_"+self.nir_survey+"_H.fits"
@@ -90,7 +105,7 @@ class BaseDistObj():
         self.model = self.data_dir+self.name+"_model.fits"
         self.completeness_filename = os.path.join(self.data_dir,self.name+"_completeness_"+self.nir_survey+".pkl")
     
-    def calculate_continuum_contour_level(cont_survey=None,Ak=2.,T=20.*u.K):
+    def calculate_continuum_level(self,cont_survey=None,Ak=1.5,T=20.*u.K):
         """
         Calculate the appropriate continuum contour level 
         in the units used for the maps from a given survey.
@@ -117,56 +132,67 @@ class BaseDistObj():
                      (lam/u.mm)**(3)) / 1000.
         return(Snu.decompose())
         
-    def get_ukidss_images(self,clobber=False):
+    def get_nir_images(self,clobber=False):
         """
-        Get UKIDSS data/images for this region.
+        Get NIR data/images for this region.
         This comes from astropy.astroquery
 
         Raw data is saved into self.data_dir as 
-        self.name+"_UKIDSS_J.fits"
+        self.name+"_"+self.nir_survey+"_J.fits"
 
         """
         #Get images
         if (not (os.path.isfile(self.kim) and os.path.isfile(self.him) 
             and os.path.isfile(self.jim)) or clobber):
-            print("Fetching UKIDSS images from server...")
+            print("Fetching NIR images from server...")
+            
+            if self.nir_survey == "VISTA":
+                from astroquery.vista import Vista as NIR
+            if self.nir_survey == "UKIDSS":
+                from astroquery.ukidss import Ukidss as NIR
+            
             for filtername,filename in zip(["J","H","K"],(self.jim,self.him,self.kim)):
-                images = Ukidss.get_images(coordinates.Galactic(l=self.glon, b=self.glat, 
+                images = NIR.get_images(coordinates.Galactic(l=self.glon, b=self.glat, 
                                             unit=(u.deg, u.deg)),
                                             waveband=filtername,
-                                            image_width=self.ukidss_im_size)
+                                            image_width=self.nir_im_size)
                 #This makes a big assumption that the first UKIDSS image is the one we want
                 fits.writeto(filename,
                              images[0][1].data,images[0][1].header,clobber=True)
         else:
-            print("UKIDSS image already downloaded. Use clobber=True to fetch new versions.")
+            print("NIR image already downloaded. Use clobber=True to fetch new versions.")
                          
-    def get_ukidss_cat(self,clobber=False):
+    def get_nir_cat(self,clobber=False):
         """
-        Get the UKIDSS catalog
+        Get the NIR catalog
         Catalog (necessary for zero-point determination) is saved
         into self.data_dir as
-        self.name+"_UKIDSS_cat.fits"
+        self.name+"_"+self.nir_survey+"cat.fits"
         """
-        if (not os.path.isfile(self.ukidss_cat)) or clobber:
-            print("Fetching UKIDSS catalog from server...")
+        if (not os.path.isfile(self.nir_cat)) or clobber:
+            print("Fetching NIR catalog from server...")
             
-            table = Ukidss.query_region(coordinates.Galactic(l=self.glon,
-                        b=self.glat,  unit=(u.deg, u.deg)), radius=self.ukidss_im_size)
-            table.write(self.ukidss_cat,format="fits",overwrite=clobber)
+            if self.nir_survey == "VISTA":
+                from astroquery.vista import Vista as NIR
+            if self.nir_survey == "UKIDSS":
+                from astroquery.ukidss import Ukidss as NIR
+            
+            table = NIR.query_region(coordinates.Galactic(l=self.glon,
+                        b=self.glat,  unit=(u.deg, u.deg)), radius=self.nir_im_size)
+            table.write(self.nir_cat,format="fits",overwrite=clobber)
             #Get catalog. We need this to establish zero-points/colours
         else:
-            print("UKIDSS catalog already downloaded. Use clobber=True to fetch new versions.")
+            print("NIR catalog already downloaded. Use clobber=True to fetch new versions.")
             
     def get_continuum(self,clobber=False):
         if (not os.path.isfile(self.continuum)) or clobber:
-            print("Fetching BGPS cutout from server...")
+            print("Fetching continuum cutout from server...")
             image = Magpis.get_images(coordinates.Galactic(self.glon, self.glat,
-                    unit=(u.deg,u.deg)), image_size=self.continuum_im_size, survey='bolocam')
+                    unit=(u.deg,u.deg)), image_size=self.continuum_im_size, survey=self.magpis_survey)
             fits.writeto(self.continuum,
                          image[0].data,image[0].header,clobber=clobber)
         else:
-            print("BGPS image already downloaded. Use clobber=True to fetch new versions.")
+            print("Continuum image already downloaded. Use clobber=True to fetch new versions.")
             
     def get_model(self,clobber=False):
         """
@@ -194,7 +220,15 @@ class BaseDistObj():
             
     def get_contours(self, fitsfile, manual_contour_level=None):
         """
-        Given a Bolocam FITS file, return the contours at a given flux level
+        Given a continuum FITS file, return the contours enclosing 
+        the source position at a given flux level.
+        
+        There are a couple complications:
+        1) We seek a closed contour
+        2) The contour should only extend over the region
+            covered by the NIR image (K-band, in this case)
+        
+        This function could usefully be refactored/simplified
         """
         
         hdulist = fits.open(fitsfile)
@@ -221,7 +255,6 @@ class BaseDistObj():
         paths = [p for p in C.trace(contour_level) if p.ndim==2]
 
         wcs_paths = [wcs.wcs_pix2world(p,0) for p in paths]
-
 
         index = 0
         self.good_contour = False
@@ -349,11 +382,11 @@ class BaseDistObj():
         
         
         if self.contour_area > 0.0001 and self.good_contour:
-            sex = determine_completeness.do_setup(self.name,survey="UKIDSS")
-            k_corr = determine_completeness.do_phot(sex,self.name,survey="UKIDSS")
+            sex = determine_completeness.do_setup(self.name,survey=self.nir_survey)
+            kcorr = determine_completeness.do_phot(sex,self.name,survey=self.nir_survey)
             if (force_completeness) or (not os.path.isfile(self.completeness_filename)):
-                determine_completeness.do_completeness(sex,self.name,self.contours,survey="UKIDSS",k_corr=k_corr,numtrials = 100)
-            self.catalog = atpy.Table(os.path.join(self.data_dir,self.name+"_MyCatalog_UKIDSS.vot"))
+                determine_completeness.do_completeness(sex,self.name,self.contours,survey=self.nir_survey,k_corr=kcorr,numtrials = 100)
+            self.catalog = atpy.Table(os.path.join(self.data_dir,self.name+"_MyCatalog_"+self.nir_survey+".vot"))
             self.catalog.describe()
         else:
             print("Bad contour (too small, or does not contain center point)")
@@ -373,7 +406,7 @@ class BaseDistObj():
         self.allblue = 0
         self.n_blue = 0
         poly = self.all_poly
-        self.find_stars_in_contour(poly,"UKIDSS")
+        self.find_stars_in_contour(poly,self.nir_survey)
         blue,n_blue = self.count_blue_stars_in_contour(self.completeness,
                                         blue_cut=blue_cut,
                                         kupperlim = kup,
@@ -381,7 +414,7 @@ class BaseDistObj():
                                         ph_qual = False,
                                         catalog=self.catalog,
                                         plot=True,
-                                        survey="UKIDSS")
+                                        survey=self.nir_survey)
         print("Total area is...")
         print(self.total_poly_area)
         print("arcminutes")
@@ -402,22 +435,22 @@ class BaseDistObj():
                 kup,klo,blue_cut,self,
                         self.density_upperlim, #Why pass the object and
                         self.density_lowerlim, #the density?
-                        self.density,survey="UKIDSS")
+                        self.density,survey=self.nir_survey)
         print(d)
-        distance_ukidss = d
-        upper_ukidss = upp
-        lower_ukidss = low
+        distance = d
+        upper = upp
+        lower = low
         print("==== Distance Results ====")
-        print(distance_ukidss)
-        print(lower_ukidss)
-        print(upper_ukidss)
+        print(distance)
+        print(lower)
+        print(upper)
         print("==========================")
-        self.distance_est = distance_ukidss
-        self.distance_lolim = lower_ukidss
-        self.distance_hilim = upper_ukidss
+        self.distance_est = distance
+        self.distance_lolim = lower
+        self.distance_hilim = upper
         results = {"name":self.name,"glon":self.glon,"glat":self.glat,
                    "area":self.contour_area,"n_obs_blue":self.n_blue,
-                   "n_est_blue":self.allblue,"dist":self.distance_distance_est,
+                   "n_est_blue":self.allblue,"dist":self.distance_est,
                    "dist_lolim":self.distance_lolim,"dist_hilim":self.distance_hilim}
         return(results)
         
@@ -442,15 +475,7 @@ class BaseDistObj():
         """
         verts = np.array(contour,float)
         path = Path(verts)        
-        if survey == "2MASS":
-            points = np.column_stack((self.twomass.L,self.twomass.B))
-            yo = path.contains_points(points)
-            try:
-                self.twomass.add_column("CloudMask",yo,description="If on cloud")
-            except ValueError:
-                self.twomass.CloudMask = self.twomass.CloudMask + yo
-            #self.twomass.write("Modified_2MASS.vot")
-        if survey == "UKIDSS":
+        if (survey == "UKIDSS") or (survey == "VISTA"):
             points = np.column_stack((self.catalog.L,self.catalog.B))
             yo = path.contains_points(points)
             try:
@@ -473,58 +498,7 @@ class BaseDistObj():
         from astropy.table import Table
         return(Table.read(self.model))
      
-    def load_besancon_old(self,filename,write=False):
-        """
-        Read a besancon model file
-        """
-        f = open(filename,'r')
-        lines = f.readlines()
 
-        d = defaultdict(list)
-
-        head_done = False
-        #Enumerate is for debugging code
-        for i,line in enumerate(lines):
-
-            if line.startswith("  Dist"): #Header row
-                head_done = not head_done #Header row is duplicated at end of data
-                headers = line.split()
-                n_head = len(headers)
-            elif head_done == True:
-                line_elements = line.split()
-                if len(line_elements) < n_head: #Age/Mass columns are sometimes conjoined
-                    #print("***** Problem Line Found ****")
-                    #print(line_elements)
-
-                    temp = line_elements[8:]
-                    trouble_entry = line_elements[6]
-                    age = trouble_entry[0]
-                    mass = trouble_entry[1:]
-                    line_elements.append('0')
-                    line_elements[9:] = temp
-                    line_elements[7] = mass
-                    line_elements[6] = age
-                    #print(line_elements)
-                for header,element in zip(headers,line_elements):
-                    d[header].append(float(element))
-
-        #Put into atpy Table.
-        #This is optional, we could just return d
-        t = atpy.Table()
-        for header in headers:
-        #       print(header)
-            t.add_column(header,d[header])
-        t.columns['Dist'].unit = 'kpc'
-        t.columns['Mv'].unit = 'mag'
-        t.columns['Mass'].unit = 'Msun'
-
-        t.add_comment("Bescancon Model")
-
-
-    #       t.describe()
-        if write:
-            t.write("Test.fits")
-        return(t)
     def count_blue_stars_in_contour(self,completeness,blue_cut=1.3,kupperlim = 15.,klowerlim = 12.,ph_qual = False,plot=False,catalog=None,survey=None):
         """
         Determine which of the stars inside

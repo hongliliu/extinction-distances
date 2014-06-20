@@ -70,10 +70,17 @@ def main():
 def do_setup(source,survey="UKIDSS"):
     sex = sextractor.SExtractor()
     if survey == "UKIDSS":
+    #http://www.jach.hawaii.edu/UKIRT/instruments/wfcam/user_guide/science_arrays.html
         sex.config['GAIN'] = 4.5
         sex.config['SATUR_LEVEL'] = 40000.0
         sex.config['MAG_ZEROPOINT'] = 25 #sex.Kzptalt
         sex.config['PHOT_APERTURES'] = 5 #sex.Kzptalt
+    elif survey == "VISTA":
+    #http://casu.ast.cam.ac.uk/surveys-projects/vista/technical/
+        sex.config['GAMIN'] = 4.19 
+        sex.config['SATUR_LEVEL'] = 32000.0
+        sex.config['MAG_ZEROPOINT'] = 23.
+        sex.config['PHOT_APERTURES'] = 5.
 
     sex.config['PIXEL_SCALE'] = 0
     sex.config['CHECKIMAGE_TYPE'] = 'NONE'

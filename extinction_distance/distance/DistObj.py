@@ -255,6 +255,7 @@ class DistObj():
             except AttributeError: #MultiPolygon
                 mycontours = []
                 for j,poly in enumerate(ya):
+		    #print(poly.exterior.coords.xy)
                     path = Path(poly.exterior.coords.xy)
                     if path.contains_point((self.glon,self.glat)):
                         self.good_contour = True
@@ -395,7 +396,7 @@ class DistObj():
         self.distance_hilim = upper_ukidss
         results = {"name":self.name,"glon":self.glon,"glat":self.glat,
                    "area":self.contour_area,"n_obs_blue":self.n_blue,
-                   "n_est_blue":self.allblue,"dist":self.distance_distance_est,
+                   "n_est_blue":self.allblue,"dist":self.distance_est,
                    "dist_lolim":self.distance_lolim,"dist_hilim":self.distance_hilim}
         return(results)
         
