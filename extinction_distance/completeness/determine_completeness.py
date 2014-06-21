@@ -218,6 +218,11 @@ def do_phot(sex,source,survey="UKIDSS"):
 
 
     sex.clean(config=True,catalog=True,check=True)
+    
+    f = open(os.path.join(source+"_data/",source+"_zpcorr_"+survey+".pkl"),'w')
+    pickle.dump(k_correct,f)
+    f.close()
+    
     return(k_correct)
 
 

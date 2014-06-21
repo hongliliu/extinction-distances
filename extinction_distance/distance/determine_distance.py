@@ -18,6 +18,7 @@ cloud_av = 14. #This is 72*0.2 -- i.e. a BGPS flux of 0.2 Jy/beam
 cloud_ak = cloud_av*0.114 #Conversion to A_K, check this
 
 
+
 def do_besancon_estimate(model_data,kupperlim,klowerlim,colorcut,cloud,upperdensity,lowerdensity,centraldensity,survey):
     """We assume that all model files are of the same size -- 0.04 sq degree"""
     blue_star_density_model = []

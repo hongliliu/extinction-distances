@@ -36,6 +36,8 @@ import matplotlib.pyplot as plt #For contouring and display
 from scipy.interpolate import interp1d
 from collections import defaultdict
 from matplotlib.path import Path
+from extinction_distance.support import smooth
+import pylab
 
 import matplotlib._cntr as _cntr
 
@@ -104,6 +106,14 @@ class BaseDistObj():
 
         self.model = self.data_dir+self.name+"_model.fits"
         self.completeness_filename = os.path.join(self.data_dir,self.name+"_completeness_"+self.nir_survey+".pkl")
+        self.zpcorr_filename = os.path.join(self.name+"_data/",self.name+"_zpcorr_"+self.nir_survey+".pkl")
+    
+        self.photocatalog = os.path.join(self.data_dir,self.name+"_MyCatalog_"+self.nir_survey+".vot")
+    
+        try:
+            self.get_contours(self.continuum)
+        except:
+            pass
     
     def calculate_continuum_level(self,cont_survey=None,Ak=1.5,T=20.*u.K):
         """
@@ -335,6 +345,13 @@ class BaseDistObj():
 
         """
         from extinction_distance.support import zscale
+        
+        try:
+            self.get_contours(self.continuum)
+        except:
+            pass
+        
+        
         print("Making color-contour checkimage...")
         if (not os.path.isfile(self.rgbcube)) or clobber:
             aplpy.make_rgb_cube([self.kim,self.him,self.jim],self.rgbcube,north=True,system="GAL")
@@ -373,20 +390,22 @@ class BaseDistObj():
             s += (xy[j,0] - xy[i,0])*(xy[j,1] + xy[i,1])
         return np.abs(0.5*s)
 
-    def make_photo_catalog(self,force_completeness=False):
+    def make_photo_catalog(self,force_completeness=False,clobber=False):
         """
         Reads from photometry parameters
         Uses the trimmed image data
         """
         from extinction_distance.completeness import determine_completeness
         
-        
         if self.contour_area > 0.0001 and self.good_contour:
             sex = determine_completeness.do_setup(self.name,survey=self.nir_survey)
-            kcorr = determine_completeness.do_phot(sex,self.name,survey=self.nir_survey)
+            if ((not os.path.isfile(self.photocatalog)) or (not os.path.isfile(self.zpcorr_filename))) or clobber:
+                kcorr = determine_completeness.do_phot(sex,self.name,survey=self.nir_survey)
+            else:
+                kcorr = self.load_zpcorr()
             if (force_completeness) or (not os.path.isfile(self.completeness_filename)):
                 determine_completeness.do_completeness(sex,self.name,self.contours,survey=self.nir_survey,k_corr=kcorr,numtrials = 100)
-            self.catalog = atpy.Table(os.path.join(self.data_dir,self.name+"_MyCatalog_"+self.nir_survey+".vot"))
+            self.catalog = atpy.Table(self.photocatalog)
             self.catalog.describe()
         else:
             print("Bad contour (too small, or does not contain center point)")
@@ -431,11 +450,7 @@ class BaseDistObj():
         print(self.density)
         print(self.density_upperlim)
         print(self.density_lowerlim)
-        d,upp,low = determine_distance.do_besancon_estimate(self.model_data,
-                kup,klo,blue_cut,self,
-                        self.density_upperlim, #Why pass the object and
-                        self.density_lowerlim, #the density?
-                        self.density,survey=self.nir_survey)
+        d,upp,low = self.get_distance(kup,klo,blue_cut)
         print(d)
         distance = d
         upper = upp
@@ -463,9 +478,7 @@ class BaseDistObj():
         self.all_poly = self.contours
         self.total_poly_area = self.contour_area*(3600.) #Needs to go to sq arcmin
         self.load_completeness()
-        #self.load_photo_catalog() #We just keep this around in memory
-                                   #from make_photo_catalog()
-                                   #Not necessarily the best plan
+        self.catalog = atpy.Table(self.photocatalog)
     
     def find_stars_in_contour(self,contour,survey):
         """
@@ -482,6 +495,16 @@ class BaseDistObj():
                 self.catalog.add_column("CloudMask",yo,description="If on cloud")
             except ValueError:
                 self.catalog.CloudMask = self.catalog.CloudMask + yo
+
+    def load_zpcorr(self):
+        """
+        Load in the saved estimates of the zero-point
+        """
+        g = open(self.zpcorr_filename,'r')
+        zpcorr = pickle.load(g)
+        g.close()
+        return(zpcorr)
+
     
     
     def load_completeness(self):
@@ -551,6 +574,86 @@ class BaseDistObj():
         plt.axvline(x=1.5,ls=":")
         plt.savefig(self.data_dir+self.name+"_hist.png")
     
+    def get_distance(self,kupperlim,klowerlim,colorcut):
+        """
+        A faster method to get distances
+        
+        """
+        
+        max_distance = 10000. #Max distance in pc
+        
+        blue_star_density_model = []
+        cloud_distances = np.arange(0,max_distance,50)[::-1]
+        
 
+        Mags_per_kpc = 0.7
+        
+        foreground = self.model_data[self.model_data['Dist'] <= max_distance/1000.]
+        foreground['corrj'] = foreground['J-K']+foreground['K'] + Mags_per_kpc*0.276*foreground['Dist']
+        foreground['corrk'] = foreground['K'] + Mags_per_kpc*0.114*foreground['Dist']
+
+        for cloud_distance in cloud_distances:
+            foreground = foreground[foreground['Dist'] <= cloud_distance/1000.]
+            J_min_K = foreground[(foreground['corrk'] < kupperlim) & (foreground['corrk'] > klowerlim) & 
+                                 (foreground['corrj']-foreground['corrk'] < colorcut)]
+            #The 25/3600. takes us to per square arcmin for a field of 0.04 sq degree
+            blue_star_density_model.append(len(J_min_K)*(25/3600.))
+        blue_star_density_model = blue_star_density_model[::-1]
+        cloud_distances = cloud_distances[::-1]
+        
+        blah = smooth.smooth(np.array(blue_star_density_model),window_len=9,window='hanning')
+        pylab.clf()
+        pylab.plot(cloud_distances,blah,label="Besancon",color='k',ls='--')
+        pylab.xlabel("Distance [pc]")
+        pylab.ylabel("Number of Blue Stars/(sq. arcmin)")
+
+        s = interp1d(cloud_distances,blue_star_density_model,kind=5)
+        xx = np.linspace(0,max_distance-100.,num=max_distance-100)
+        yy = s(xx)
+
+        lower = np.where(yy < self.density_lowerlim)
+        upper = np.where(yy > self.density_upperlim)
+    
+        try:
+            upperlim = upper[0][0]
+        except IndexError:
+            upperlim = 10.
+        try:
+            lowerlim = lower[0][-1]
+        except IndexError:
+            lowerlim = 0.
+
+        center1 = np.where(yy <= self.density)
+        center2 = np.where(yy > self.density)
+
+        central = center1[0][-1]
+
+        pylab.axhline(y=self.density,linewidth=2,color='k')
+        pylab.axhline(y=self.density_upperlim,color='k',linestyle=':')
+        pylab.axhline(y=self.density_lowerlim,color='k',linestyle=':')
+
+        pylab.axvline(x=lowerlim,color='k',linestyle=':')
+        pylab.axvline(x=upperlim,color='k',linestyle=':')
+        pylab.axvline(x=central,color='k',linewidth=2)
+        pylab.figtext(0.15,0.8,self.name,ha="left",fontsize='large',backgroundcolor="white")
+        upper = str(upperlim-central)
+        lower = str(lowerlim-central)
+
+        pylab.figtext(0.15,0.75,str(central)+r"$_{"+lower+r"}$"+r"$^{+"+upper+r"}$"+" pc",fontsize='large',backgroundcolor="white")
+        pylab.figtext(0.15,0.70,r'Area = '+str(round(self.total_poly_area,2))+' arcmin$^2$',ha="left",fontsize='large',backgroundcolor="white")
+        pylab.figtext(0.15,0.65,"Survey: "+self.nir_survey,ha="left",fontsize='large',backgroundcolor="white")
+
+        fig = pylab.gcf()
+        fig.set_size_inches(6,6)
+        Size = fig.get_size_inches()
+        print("Size in Inches: "+str(Size))
+        pylab.savefig(os.path.join(self.name+"_data",self.name+"_Distance_"+self.nir_survey+'.png'))
+        pylab.clf()
+
+        print("Distance = "+str(central)+"+"+str(upperlim-central)+str(lowerlim-central))
+        perr = upperlim-central
+        merr = central-lowerlim
+        return(central,perr,merr)
+        
 if __name__ == '__main__':
     unittest.main()
