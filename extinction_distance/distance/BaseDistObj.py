@@ -522,7 +522,12 @@ class BaseDistObj():
         results = {"name":self.name,"glon":self.glon,"glat":self.glat,
                    "area":self.contour_area,"n_obs_blue":self.n_blue,
                    "n_est_blue":self.allblue,"dist":self.distance_est,
-                   "dist_lolim":self.distance_lolim,"dist_hilim":self.distance_hilim}
+                   "dist_lolim":self.distance_lolim,"dist_hilim":self.distance_hilim,
+                   "klo":klo, "kup":kup}
+        f = open(os.path.join(source+"_data/",source+"_results.pkl"),'w')
+        pickle.dump(results,f)
+        f.close()
+        
         return(results)
         
     
