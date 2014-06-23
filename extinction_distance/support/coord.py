@@ -196,6 +196,16 @@ def match(ra1, dec1, ra2, dec2, tol, allmatches=False,seps=True):
     """
     from numpy.core.records import fromarrays
     
+    print(ra1)
+    print(ra2)
+    print(dec1)
+    print(dec2)
+    
+    import matplotlib.pyplot as plt
+    plt.plot(ra1,dec1,'ro')
+    plt.plot(ra2,dec2,'bo')
+    plt.show()
+    
     ra1,ra2,dec1,dec2 = map(np.asarray, (ra1, ra2, dec1, dec2))
 
     abs = np.abs

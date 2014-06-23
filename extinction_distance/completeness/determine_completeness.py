@@ -77,7 +77,7 @@ def do_setup(source,survey="UKIDSS"):
         sex.config['PHOT_APERTURES'] = 5 #sex.Kzptalt
     elif survey == "VISTA":
     #http://casu.ast.cam.ac.uk/surveys-projects/vista/technical/
-        sex.config['GAMIN'] = 4.19 
+        sex.config['GAIN'] = 4.19 
         sex.config['SATUR_LEVEL'] = 32000.0
         sex.config['MAG_ZEROPOINT'] = 23.
         sex.config['PHOT_APERTURES'] = 5.
@@ -108,7 +108,7 @@ def do_phot(sex,source,survey="UKIDSS"):
     sex.run(os.path.join(source+"_data",source+"_"+survey+"_K.fits"))
     Kcatalog = sex.catalog()
     try:
-        k_correct = determine_ukidss_zp.calibrate(source,"K_1")
+        k_correct = determine_ukidss_zp.calibrate(source,"K_1",survey="2MASS")
     except ValueError:
         print("Failed to calibrate, assuming no correction")
         k_correct = 0
@@ -121,7 +121,7 @@ def do_phot(sex,source,survey="UKIDSS"):
     sex.run(os.path.join(source+"_data",source+"_"+survey+"_J.fits"))
     Jcatalog = sex.catalog()
     try:
-        j_correct = determine_ukidss_zp.calibrate(source,"J")
+        j_correct = determine_ukidss_zp.calibrate(source,"J",survey="2MASS")
     except IndexError:
         print("Failed to calibrate, assuming no correction")
         k_correct = 0
@@ -229,7 +229,12 @@ def do_phot(sex,source,survey="UKIDSS"):
 
 def do_completeness(sex,source,contours,survey="UKIDSS",k_corr = 0,numtrials=50):
     print("Running completeness...")
+    #print(survey)
     if survey == "UKIDSS":
+        mags = [11,12,13,14,15,16,17,18,19]
+        percent = {11:[],12:[],13:[],14:[],15:[],16:[],17:[],18:[],19:[]}
+        zp = 25+k_corr
+    if survey == "VISTA":
         mags = [11,12,13,14,15,16,17,18,19]
         percent = {11:[],12:[],13:[],14:[],15:[],16:[],17:[],18:[],19:[]}
         zp = 25+k_corr
@@ -269,6 +274,9 @@ def insert_fake_stars(d,h,mags,all_poly,WCS,sex,survey="UKIDSS",zp=25.):
     #Insert fake star
     if survey== "UKIDSS":
         size = 5
+    if survey== "VISTA":
+        size = 5
+        
     if survey == "2MASS":
         size = 5
 

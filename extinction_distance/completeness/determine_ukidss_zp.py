@@ -1,18 +1,24 @@
 import atpy #Needs >0.9.5 due to bug in comment handling
 from extinction_distance.completeness import sextractor
 import numpy as np
-import extinction_distance.support.coord as coord #This is an old slow version, but has no compat problems
+#import extinction_distance.support.coord as coord #This is an old slow version, which seems to be broken
+import extinction_distance.support.pyspherematch as pyspherematch #Better version
+
 import os
 import math
+from astropy.table import Table
 
-def calibrate(source,filtername):
+
+def calibrate(source,filtername,survey="UKIDSS"):
 
     flag_limit = 2
-    ukidss_filter = filtername+"AperMag3"
-    ukidss_err = filtername+"AperMag3Err"
 
     sex = sextractor.SExtractor()
     my_catalog = sex.catalog()
+    g = Table(my_catalog)
+    print(g)
+    
+    my_catalog = g[(g['FLAGS'] < flag_limit)]
     #print(my_catalog)
     alpha = []
     delta = []
@@ -20,27 +26,36 @@ def calibrate(source,filtername):
         alpha.append(star['ALPHA_J2000'])
         delta.append(star['DELTA_J2000'])
 
-    t = atpy.Table(os.path.join(source+"_data",source+"_UKIDSS_cat.fits"),type='fits')
+    if survey == "2MASS":
+        t = Table.read(os.path.join(source+"_data",source+"_2MASS_cat.vot"),format='votable')
+        
+        #print(t)
+        if filtername == "K_1":
+            twomass_magname = "k_m"
+            twomass_errname = "k_msigcom"
 
-    blah = coord.match(np.array(alpha),np.array(delta),t['RA'],
-                        t['Dec'],1.,seps=False)
+        if filtername == "H":
+            twomass_magname = "h_m"
+            twomass_errname = "h_msigcom"
 
-    #print(source)
-    #print(filtername)
-    #print(my_catalog)
-    my_mag = []
-    ukidss_mag = []
-    errs = []
-    for i,j in enumerate(blah):
-        if j != -1:
-            #print(i)
-            #print(j)
-            #print(t[int(j)][ukidss_filter])
-            if ((my_catalog[i]['FLAGS'] < flag_limit) and (t[int(j)][ukidss_filter] < 20) and (t[int(j)][ukidss_filter] > 0)):
-                my_mag.append(my_catalog[i]['MAG_APER'])
-                ukidss_mag.append(t[int(j)][ukidss_filter])
-                errs.append(np.sqrt(t[int(j)][ukidss_err]**2+my_catalog[i]['MAGERR_APER']**2))
-
+        if filtername == "J":
+            twomass_magname = "j_m"
+            twomass_errname = "j_msigcom"
+        t = t[(t[twomass_magname] < 20) & (t[twomass_magname] > 0)]
+        idxs1, idxs2, ds = pyspherematch.spherematch(np.array(alpha),np.array(delta),np.array(t['ra']),
+                        np.array(t['dec']),tol=2/3600.)
+    else:
+        #This might be broken now
+        t = atpy.Table(os.path.join(source+"_data",source+"_"+survey+"_cat.fits"),type='fits')
+        ukidss_filter = filtername+"AperMag3"
+        ukidss_err = filtername+"AperMag3Err"
+        idxs1, idxs2, ds = pyspherematch.spherematch(np.array(alpha),np.array(delta),t['RA'],
+                        t['Dec'],tol=2/3600.)    
+    
+    my_mag = my_catalog[idxs1]['MAG_APER']
+    ukidss_mag = t[idxs2][twomass_magname]
+    errs = np.sqrt(t[idxs2][twomass_errname]**2+my_catalog[idxs1]['MAGERR_APER']**2)
+    
     a = np.average(np.array(my_mag)-np.array(ukidss_mag),weights = np.array(errs))
     b = np.median(np.array(my_mag)-np.array(ukidss_mag))
     poss_zp = np.array([a,b])

@@ -96,6 +96,7 @@ class BaseDistObj():
         self.jim = self.data_dir+self.name+"_"+self.nir_survey+"_J.fits"
         self.him = self.data_dir+self.name+"_"+self.nir_survey+"_H.fits"
         self.kim = self.data_dir+self.name+"_"+self.nir_survey+"_K.fits"
+        self.nir_cal_cat = self.data_dir+self.name+"_2MASS_cat.vot"
         self.nir_cat = self.data_dir+self.name+"_"+self.nir_survey+"_cat.fits"
         self.continuum = self.data_dir+self.name+"_"+self.cont_survey+".fits"
         self.rgbcube = self.data_dir+self.name+"_cube.fits"
@@ -115,7 +116,7 @@ class BaseDistObj():
         except:
             pass
     
-    def calculate_continuum_level(self,cont_survey=None,Ak=1.5,T=20.*u.K):
+    def calculate_continuum_level(self,cont_survey=None,Ak=1.0,T=20.*u.K):
         """
         Calculate the appropriate continuum contour level 
         in the units used for the maps from a given survey.
@@ -162,37 +163,61 @@ class BaseDistObj():
                 from astroquery.ukidss import Ukidss as NIR
             
             for filtername,filename in zip(["J","H","K"],(self.jim,self.him,self.kim)):
+                #Need to trim on deprecated and distinguish between tilestack and tilestackconf
+                #tester = NIR.get_image_list(coordinates.Galactic(l=self.glon, b=self.glat, 
+                #                            unit=(u.deg, u.deg)),
+                #                            waveband=filtername,
+                #                            image_width=self.nir_im_size,
+                #                            frame_type="tilestack")
+                #print(tester)
                 images = NIR.get_images(coordinates.Galactic(l=self.glon, b=self.glat, 
                                             unit=(u.deg, u.deg)),
                                             waveband=filtername,
-                                            image_width=self.nir_im_size)
+                                            image_width=self.nir_im_size,
+                                            frame_type="tilestack")
+                #print(images)                            
                 #This makes a big assumption that the first UKIDSS image is the one we want
                 fits.writeto(filename,
-                             images[0][1].data,images[0][1].header,clobber=True)
+                             images[0][-1].data,images[0][-1].header,clobber=True)
         else:
             print("NIR image already downloaded. Use clobber=True to fetch new versions.")
                          
-    def get_nir_cat(self,clobber=False):
+    def get_nir_cat(self,clobber=False,use_twomass=True):
         """
         Get the NIR catalog
         Catalog (necessary for zero-point determination) is saved
         into self.data_dir as
         self.name+"_"+self.nir_survey+"cat.fits"
         """
-        if (not os.path.isfile(self.nir_cat)) or clobber:
-            print("Fetching NIR catalog from server...")
+        print("Fetching NIR catalog from server...")
+        if use_twomass:
+            if (not os.path.isfile(self.nir_cal_cat)) or clobber:
+                from astroquery.irsa import Irsa
+                Irsa.ROW_LIMIT = 2000.
+                table = Irsa.query_region(coordinates.Galactic(l=self.glon,
+                        b=self.glat,  unit=(u.deg, u.deg)), 
+                        catalog="fp_psc", spatial="Box", 
+                        width=self.nir_im_size)
+                #print(table)
+            #IPAC table does not take overwrite? But FITS does? So inconsistent and bad
+                table.write(self.nir_cal_cat,format='votable',overwrite=clobber)
+            else:
+                print("NIR catalog already downloaded. Use clobber=True to fetch new versions.")
             
-            if self.nir_survey == "VISTA":
-                from astroquery.vista import Vista as NIR
-            if self.nir_survey == "UKIDSS":
-                from astroquery.ukidss import Ukidss as NIR
-            
-            table = NIR.query_region(coordinates.Galactic(l=self.glon,
-                        b=self.glat,  unit=(u.deg, u.deg)), radius=self.nir_im_size)
-            table.write(self.nir_cat,format="fits",overwrite=clobber)
-            #Get catalog. We need this to establish zero-points/colours
         else:
-            print("NIR catalog already downloaded. Use clobber=True to fetch new versions.")
+            if (not os.path.isfile(self.nir_cat)) or clobber:
+                if self.nir_survey == "VISTA":
+                    from astroquery.vista import Vista as NIR
+                if self.nir_survey == "UKIDSS":
+                    from astroquery.ukidss import Ukidss as NIR
+                table = NIR.query_region(coordinates.Galactic(l=self.glon,
+                        b=self.glat,  unit=(u.deg, u.deg)), radius=self.nir_im_size)
+                table.write(self.nir_cat,format="fits",overwrite=clobber)
+            else:
+                print("NIR catalog already downloaded. Use clobber=True to fetch new versions.")
+            
+            
+            #Get catalog. We need this to establish zero-points/colours
             
     def get_continuum(self,clobber=False):
         if (not os.path.isfile(self.continuum)) or clobber:
