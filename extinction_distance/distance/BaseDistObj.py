@@ -164,8 +164,10 @@ class BaseDistObj():
             
             if self.nir_survey == "VISTA":
                 from astroquery.vista import Vista as NIR
+                kwargs = {"frame_type":"tilestack"}
             if self.nir_survey == "UKIDSS":
                 from astroquery.ukidss import Ukidss as NIR
+                kwargs = {}
             
             for filtername,filename in zip(["J","H","K"],(self.jim,self.him,self.kim)):
                 #Need to trim on deprecated and distinguish between tilestack and tilestackconf
@@ -179,7 +181,7 @@ class BaseDistObj():
                                             unit=(u.deg, u.deg)),
                                             waveband=filtername,
                                             image_width=self.nir_im_size,
-                                            frame_type="tilestack")
+                                            **kwargs)
                 #print(images)                            
                 #This makes a big assumption that the first UKIDSS image is the one we want
                 fits.writeto(filename,
@@ -258,7 +260,7 @@ class BaseDistObj():
             
                                             
             
-    def get_contours(self, fitsfile, manual_contour_level=None):
+    def get_contours(self, fitsfile, Ak=None):
         """
         Given a continuum FITS file, return the contours enclosing 
         the source position at a given flux level.
@@ -275,10 +277,13 @@ class BaseDistObj():
 
         header = hdulist[0].header
         img = hdulist[0].data
-        if not manual_contour_level:
+        if not Ak:
             contour_level = self.contour_level #10 av in Jy?
         else:
-            contour_level = manual_contour_level
+            contour_level = self.calculate_continuum_level(
+                                 cont_survey=self.cont_survey, 
+                                 Ak=Ak)
+            print("Using a contour level of: "+str(round(contour_level,3)))
 
         wcs = pywcs.WCS(header)
         yy,xx = np.indices(img.shape)
@@ -374,13 +379,7 @@ class BaseDistObj():
         Make a three-color image
 
         """
-        from extinction_distance.support import zscale
-        
-        try:
-            self.get_contours(self.continuum)
-        except:
-            pass
-        
+        from extinction_distance.support import zscale        
         
         print("Making color-contour checkimage...")
         if (not os.path.isfile(self.rgbcube)) or clobber:
@@ -441,6 +440,25 @@ class BaseDistObj():
             print("Bad contour (too small, or does not contain center point)")
             raise(ValueError)
             
+            
+    def determine_magnitude_cuts(self, completeness_cut = 0.5):
+        """
+        Determine the magnitudes we wish to consider for counting blue stars
+        
+        If completeness is low for a given magnitude it is best
+        just to exlude these stars entirely from the analysis
+        rather than use them, which would produce wildy varying
+        distance estimates
+        """
+        
+        mags = self.completeness[:,0]
+        comps = self.completeness[:,1]
+        print(mags)
+        print(comps)
+        good_mags = mags[comps > completeness_cut]
+        return(np.min(good_mags),np.max(good_mags))
+        
+            
     def do_distance_estimate(self):
         """
         Calculate the extinction distance
@@ -452,10 +470,18 @@ class BaseDistObj():
         blue_cut = 1.5 #Magic number for J-K cut. Put this elsewhere
         kup = 17 #More magic numbers
         klo = 11
+        
+        klo,kup = self.determine_magnitude_cuts()
+        
+        print("Using stars between K = "+str(klo)+" and "+str(kup))
+        
         self.allblue = 0
         self.n_blue = 0
         poly = self.all_poly
         self.find_stars_in_contour(poly,self.nir_survey)
+        
+        
+        
         blue,n_blue = self.count_blue_stars_in_contour(self.completeness,
                                         blue_cut=blue_cut,
                                         kupperlim = kup,
