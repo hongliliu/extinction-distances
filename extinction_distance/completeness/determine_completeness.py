@@ -48,14 +48,15 @@ from astropy import wcs
 from astropy import coordinates
 from astropy import units as u
 import math
-#import matplotlib.nxutils as nx
 from matplotlib.path import Path
-import extinction_distance.support.coord as coord#This is an old slow version, but has no compat problems
 import atpy
 import montage_wrapper as montage
 import pickle
 import pylab
-import determine_ukidss_zp
+import determine_zp
+import extinction_distance.support.pyspherematch as pyspherematch #Better version
+from astropy.table import Table
+
 
 flag_limit = 4
 
@@ -79,7 +80,7 @@ def do_setup(source,survey="UKIDSS"):
     #http://casu.ast.cam.ac.uk/surveys-projects/vista/technical/
         sex.config['GAIN'] = 4.19 
         sex.config['SATUR_LEVEL'] = 32000.0
-        sex.config['MAG_ZEROPOINT'] = 23.
+        sex.config['MAG_ZEROPOINT'] = 24.
         sex.config['PHOT_APERTURES'] = 5.
 
     sex.config['PIXEL_SCALE'] = 0
@@ -108,7 +109,7 @@ def do_phot(sex,source,survey="UKIDSS"):
     sex.run(os.path.join(source+"_data",source+"_"+survey+"_K.fits"))
     Kcatalog = sex.catalog()
     try:
-        k_correct = determine_ukidss_zp.calibrate(source,"K_1",survey="2MASS")
+        k_correct = determine_zp.calibrate(source,"K_1",survey="2MASS")
     except ValueError:
         print("Failed to calibrate, assuming no correction")
         k_correct = 0
@@ -121,50 +122,38 @@ def do_phot(sex,source,survey="UKIDSS"):
     sex.run(os.path.join(source+"_data",source+"_"+survey+"_J.fits"))
     Jcatalog = sex.catalog()
     try:
-        j_correct = determine_ukidss_zp.calibrate(source,"J",survey="2MASS")
+        j_correct = determine_zp.calibrate(source,"J",survey="2MASS")
     except IndexError:
         print("Failed to calibrate, assuming no correction")
         k_correct = 0
 
-
-    Kalpha = []
-    Kdelta = []
-    #
-    for star in Kcatalog:
-        Kalpha.append(star['ALPHA_J2000'])
-        Kdelta.append(star['DELTA_J2000'])
-    #
-    Jalpha = []
-    Jdelta = []
-    for star in Jcatalog:
-        Jalpha.append(star['ALPHA_J2000'])
-        Jdelta.append(star['DELTA_J2000'])
-    #
-    blah = coord.match(np.array(Kalpha),np.array(Kdelta),np.array(Jalpha),
-                                            np.array(Jdelta),0.3,seps=False)
-    ra = []
-    dec = []
-    Jmag = []
-    Kmag = []
-    L = []
-    B = []
-
-    for i,j in enumerate(blah):
-        if j != -1:
-            if ((Kcatalog[i]['FLAGS'] < flag_limit) and (Jcatalog[int(j)]['FLAGS'] < flag_limit)):
-                ra.append(Kcatalog[i]['ALPHA_J2000'])
-                dec.append(Kcatalog[i]['DELTA_J2000'])
-                Kmag.append(Kcatalog[i]['MAG_APER']-k_correct)
-
-                Jmag.append(Jcatalog[int(j)]['MAG_APER']-j_correct)
-                gc = coordinates.ICRS(Kcatalog[i]['ALPHA_J2000'],Kcatalog[i]['DELTA_J2000'], unit=(u.degree, u.degree))
-                galcoords = gc.galactic
-                L.append(galcoords.l.degree)
-                B.append(galcoords.b.degree)
-
-    JminK = np.array(Jmag) - np.array(Kmag)
-
-    #print(Kmag)
+    Kcatalog = Table(Kcatalog)
+    Jcatalog = Table(Jcatalog)
+    
+    Kcatalog = Kcatalog[(Kcatalog['FLAGS'] < flag_limit)]
+    Jcatalog = Jcatalog[(Jcatalog['FLAGS'] < flag_limit)]
+    
+    #print(Kcatalog)
+    idxs1, idxs2, ds = pyspherematch.spherematch(np.array(Kcatalog['ALPHA_J2000']),
+                                                 np.array(Kcatalog['DELTA_J2000']),
+                                                 np.array(Jcatalog['ALPHA_J2000']),
+                                                 np.array(Jcatalog['DELTA_J2000']),tol=0.5/3600.)
+    
+    Kcatalog['MAG_APER'] -= k_correct
+    Jcatalog['MAG_APER'] -= j_correct
+    ra  = Kcatalog[idxs1]['ALPHA_J2000']
+    dec = Kcatalog[idxs1]['DELTA_J2000']
+    
+    gc = coordinates.ICRS(ra,dec, unit=(u.degree, u.degree))
+    galcoords = gc.galactic
+    L = galcoords.l.degree
+    B = galcoords.b.degree
+    
+    Jmag = Jcatalog[idxs2]['MAG_APER']
+    Kmag = Kcatalog[idxs1]['MAG_APER']
+    JminK = Jmag - Kmag
+    
+    #print(JminK)
     t = atpy.Table()
     t.add_column('RA',ra)
     t.add_column('Dec',dec)

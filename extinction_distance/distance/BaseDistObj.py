@@ -50,6 +50,8 @@ import montage_wrapper as montage
 import shapely
 import shapely.geometry #Necessary for contour code
 
+import warnings
+
 
 from astroquery.magpis import Magpis
 
@@ -70,6 +72,9 @@ class BaseDistObj():
         self.glon,self.glat = coords
         self.glat = float(self.glat)
         self.glon = float(self.glon)
+        
+        warnings.filterwarnings('ignore', category=UserWarning, append=True)
+        
         
         magpis_lookup = {"BGPS":"bolocam","ATLASGAL":"atlasgal"}
 

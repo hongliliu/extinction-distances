@@ -1,7 +1,6 @@
 import atpy #Needs >0.9.5 due to bug in comment handling
 from extinction_distance.completeness import sextractor
 import numpy as np
-#import extinction_distance.support.coord as coord #This is an old slow version, which seems to be broken
 import extinction_distance.support.pyspherematch as pyspherematch #Better version
 
 import os
@@ -16,7 +15,7 @@ def calibrate(source,filtername,survey="UKIDSS"):
     sex = sextractor.SExtractor()
     my_catalog = sex.catalog()
     g = Table(my_catalog)
-    print(g)
+    #print(g)
     
     my_catalog = g[(g['FLAGS'] < flag_limit)]
     #print(my_catalog)
