@@ -15,7 +15,7 @@ def calibrate(source,filtername,survey="UKIDSS"):
     sex = sextractor.SExtractor()
     my_catalog = sex.catalog()
     g = Table(my_catalog)
-    print(g)
+    #print(g)
     
     my_catalog = g[(g['FLAGS'] < flag_limit)]
     #print(my_catalog)

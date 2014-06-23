@@ -48,14 +48,12 @@ from astropy import wcs
 from astropy import coordinates
 from astropy import units as u
 import math
-#import matplotlib.nxutils as nx
 from matplotlib.path import Path
-#import extinction_distance.support.coord as coord #This is an old slow version, which seems to be broken
 import atpy
 import montage_wrapper as montage
 import pickle
 import pylab
-import determine_ukidss
+import determine_zp
 import extinction_distance.support.pyspherematch as pyspherematch #Better version
 from astropy.table import Table
 
@@ -82,7 +80,7 @@ def do_setup(source,survey="UKIDSS"):
     #http://casu.ast.cam.ac.uk/surveys-projects/vista/technical/
         sex.config['GAIN'] = 4.19 
         sex.config['SATUR_LEVEL'] = 32000.0
-        sex.config['MAG_ZEROPOINT'] = 23.
+        sex.config['MAG_ZEROPOINT'] = 24.
         sex.config['PHOT_APERTURES'] = 5.
 
     sex.config['PIXEL_SCALE'] = 0
@@ -135,7 +133,7 @@ def do_phot(sex,source,survey="UKIDSS"):
     Kcatalog = Kcatalog[(Kcatalog['FLAGS'] < flag_limit)]
     Jcatalog = Jcatalog[(Jcatalog['FLAGS'] < flag_limit)]
     
-    print(Kcatalog)
+    #print(Kcatalog)
     idxs1, idxs2, ds = pyspherematch.spherematch(np.array(Kcatalog['ALPHA_J2000']),
                                                  np.array(Kcatalog['DELTA_J2000']),
                                                  np.array(Jcatalog['ALPHA_J2000']),
