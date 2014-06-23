@@ -55,7 +55,7 @@ import atpy
 import montage_wrapper as montage
 import pickle
 import pylab
-import determine_ukidss_zp
+import determine_ukidss
 import extinction_distance.support.pyspherematch as pyspherematch #Better version
 from astropy.table import Table
 
@@ -111,7 +111,7 @@ def do_phot(sex,source,survey="UKIDSS"):
     sex.run(os.path.join(source+"_data",source+"_"+survey+"_K.fits"))
     Kcatalog = sex.catalog()
     try:
-        k_correct = determine_ukidss_zp.calibrate(source,"K_1",survey="2MASS")
+        k_correct = determine_zp.calibrate(source,"K_1",survey="2MASS")
     except ValueError:
         print("Failed to calibrate, assuming no correction")
         k_correct = 0
@@ -124,7 +124,7 @@ def do_phot(sex,source,survey="UKIDSS"):
     sex.run(os.path.join(source+"_data",source+"_"+survey+"_J.fits"))
     Jcatalog = sex.catalog()
     try:
-        j_correct = determine_ukidss_zp.calibrate(source,"J",survey="2MASS")
+        j_correct = determine_zp.calibrate(source,"J",survey="2MASS")
     except IndexError:
         print("Failed to calibrate, assuming no correction")
         k_correct = 0
