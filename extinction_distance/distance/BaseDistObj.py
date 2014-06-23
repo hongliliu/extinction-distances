@@ -592,7 +592,7 @@ class BaseDistObj():
 
         print("Reached Count stage")
 
-        print(completeness[...,0])
+        #print(completeness[...,0])
 
         f = interp1d(completeness[...,0],completeness[...,1],kind='linear')
 
@@ -608,7 +608,7 @@ class BaseDistObj():
                                   blue_in_contour.JMag-blue_in_contour.KMag)
 
         compfactor = f(blue_in_contour.KMag)
-        print(compfactor)
+        #print(compfactor)
         #print(blue_in_contour)
         #Hack. Really just wants np.ones()/compfactor
         blue_stars = (blue_in_contour.KMag)/(blue_in_contour.KMag)/compfactor
