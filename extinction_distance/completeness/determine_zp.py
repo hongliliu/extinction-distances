@@ -1,4 +1,3 @@
-import atpy #Needs >0.9.5 due to bug in comment handling
 from extinction_distance.completeness import sextractor
 import numpy as np
 import extinction_distance.support.pyspherematch as pyspherematch #Better version
@@ -45,7 +44,7 @@ def calibrate(source,filtername,survey="UKIDSS"):
                         np.array(t['dec']),tol=2/3600.)
     else:
         #This might be broken now
-        t = atpy.Table(os.path.join(source+"_data",source+"_"+survey+"_cat.fits"),type='fits')
+        t = Table.read(os.path.join(source+"_data",source+"_"+survey+"_cat.fits"),type='fits')
         ukidss_filter = filtername+"AperMag3"
         ukidss_err = filtername+"AperMag3Err"
         idxs1, idxs2, ds = pyspherematch.spherematch(np.array(alpha),np.array(delta),t['RA'],

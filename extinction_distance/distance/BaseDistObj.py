@@ -25,11 +25,11 @@ import os.path
 
 #These are necessary imports
 import numpy as np
-import atpy
 import aplpy
 from astropy import wcs
 from astropy import coordinates
 from astropy import units as u
+from astropy import Table
 import astropy.wcs as pywcs
 from astropy.io import fits
 import matplotlib.pyplot as plt #For contouring and display
@@ -444,8 +444,7 @@ class BaseDistObj():
                 kcorr = self.load_zpcorr()
             if (force_completeness) or (not os.path.isfile(self.completeness_filename)):
                 determine_completeness.do_completeness(sex,self.name,self.contours,survey=self.nir_survey,k_corr=kcorr,numtrials = 100)
-            self.catalog = atpy.Table(self.photocatalog)
-            self.catalog.describe()
+            self.catalog = Table.read(self.photocatalog)
         else:
             print("Bad contour (too small, or does not contain center point)")
             raise(ValueError)
@@ -549,7 +548,7 @@ class BaseDistObj():
         self.all_poly = self.contours
         self.total_poly_area = self.contour_area*(3600.) #Needs to go to sq arcmin
         self.load_completeness()
-        self.catalog = atpy.Table(self.photocatalog)
+        self.catalog = Table.read(self.photocatalog)
     
     def find_stars_in_contour(self,contour,survey):
         """

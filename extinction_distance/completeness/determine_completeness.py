@@ -47,15 +47,13 @@ from astropy.io import fits
 from astropy import wcs
 from astropy import coordinates
 from astropy import units as u
+from astropy.table import Table
 import math
 from matplotlib.path import Path
-import atpy
 import montage_wrapper as montage
 import pickle
-import pylab
 import determine_zp
 import extinction_distance.support.pyspherematch as pyspherematch #Better version
-from astropy.table import Table
 
 
 flag_limit = 4
@@ -154,23 +152,13 @@ def do_phot(sex,source,survey="UKIDSS"):
     JminK = Jmag - Kmag
     
     #print(JminK)
-    t = atpy.Table()
-    t.add_column('RA',ra)
-    t.add_column('Dec',dec)
-    t.add_column('L',L)
-    t.add_column('B',B)
-
-    t.add_column('JMag',Jmag)
-    t.add_column('KMag',Kmag)
-    t.add_column('JminK',JminK)
-    
-    #t.describe()
+    t = Table([ra,dec,L,B,Jmag,Kmag,JminK],names=('RA','Dec','L','B','JMag','KMag','JminK'))
 
     try:
         os.remove(os.path.join(source+"_data",source+"_MyCatalog_"+survey+".vot"))
     except:
         pass
-    t.write(os.path.join(source+"_data",source+"_MyCatalog_"+survey+".vot"))
+    t.write(os.path.join(source+"_data",source+"_MyCatalog_"+survey+".vot"),format='votable')
 
     catlist = [Kcatalog,Hcatalog,Jcatalog]
     filterlist = ["K","H","J"]
@@ -189,21 +177,13 @@ def do_phot(sex,source,survey="UKIDSS"):
             mag.append(star['MAG_APER'])
             magerr.append(star['MAGERR_APER'])
             flags.append(star['FLAGS'])
-        t = atpy.Table()
+        t = Table([ra,dec,mag,magerr,flags],names=('RA','Dec','Mag'+filtername,'MagErr'+filtername,'Flags'+filtername))
 
-        #print(cat['ALPHA_J2000'])
-        t.add_column('RA',ra)
-        t.add_column('Dec',dec)
-        t.add_column('Mag'+filtername,mag)
-        t.add_column('MagErr'+filtername,magerr)
-        t.add_column('Flags'+filtername,flags)
-        #if filtername=="J":
-        #       print(np.average(mag))
         try:
             os.remove(os.path.join(source+"_data",source+"_MyCatalog_"+survey+"_"+filtername+".vot"))
         except:
             pass
-        t.write(os.path.join(source+"_data",source+"_MyCatalog_"+survey+"_"+filtername+".vot"))
+        t.write(os.path.join(source+"_data",source+"_MyCatalog_"+survey+"_"+filtername+".vot"),format='votable')
 
 
     sex.clean(config=True,catalog=True,check=True)
