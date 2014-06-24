@@ -258,7 +258,14 @@ class BaseDistObj():
         else:
             print("Besancon model already downloaded. Use clobber=True to fetch new versions.")
             
-                                            
+    
+    def make_contour_at_level(self,wcs,img,yy,xx,level):
+        C = _cntr.Cntr(xx,yy,img)
+        paths = [p for p in C.trace(level) if p.ndim==2]
+
+        wcs_paths = [wcs.wcs_pix2world(p,0) for p in paths]
+        return(wcs_paths)
+            
             
     def get_contours(self, fitsfile, Ak=None):
         """
@@ -296,10 +303,12 @@ class BaseDistObj():
         img[:,0] = 0.0
         img[:,-1] = 0.0
         
-        C = _cntr.Cntr(xx,yy,img)
-        paths = [p for p in C.trace(contour_level) if p.ndim==2]
-
-        wcs_paths = [wcs.wcs_pix2world(p,0) for p in paths]
+        self.all_contours = []
+        
+        
+        #for contour_level in contour_levels:
+        wcs_paths = self.make_contour_at_level(wcs,img,yy,xx,contour_level)
+        #    self.all_contours.append(np.array(wcs_paths))
 
         index = 0
         self.good_contour = False
@@ -397,7 +406,8 @@ class BaseDistObj():
                              vmin_b = b1, vmax_b = b2)
         f = aplpy.FITSFigure(self.rgbcube2d)
         f.show_rgb(self.rgbpng)
-        f.show_markers([self.glon],[self.glat])
+        f.show_contour(self.continuum, colors='white', levels=[0.1,0.2,0.4,0.8,1.6,3.2],smooth=3,convention='calabretta')
+        f.show_markers([self.glon],[self.glat])                
         try:
             f.show_polygons([self.contours],edgecolor='cyan',linewidth=2)
         except:
