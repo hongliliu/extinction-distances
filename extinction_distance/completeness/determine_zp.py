@@ -41,7 +41,7 @@ def calibrate(source,filtername,survey="UKIDSS"):
             twomass_errname = "j_msigcom"
         t = t[(t[twomass_magname] < 20) & (t[twomass_magname] > 0)]
         idxs1, idxs2, ds = pyspherematch.spherematch(np.array(alpha),np.array(delta),np.array(t['ra']),
-                        np.array(t['dec']),tol=2/3600.)
+                        np.array(t['dec']),tol=1./3600.)
     else:
         #This might be broken now
         t = Table.read(os.path.join(source+"_data",source+"_"+survey+"_cat.fits"),type='fits')

@@ -170,20 +170,13 @@ class BaseDistObj():
                 kwargs = {}
             
             for filtername,filename in zip(["J","H","K"],(self.jim,self.him,self.kim)):
-                #Need to trim on deprecated and distinguish between tilestack and tilestackconf
-                #tester = NIR.get_image_list(coordinates.Galactic(l=self.glon, b=self.glat, 
-                #                            unit=(u.deg, u.deg)),
-                #                            waveband=filtername,
-                #                            image_width=self.nir_im_size,
-                #                            frame_type="tilestack")
-                #print(tester)
+                #Need to trim on deprecated and distinguish between tilestack and tilestackconf?
                 images = NIR.get_images(coordinates.Galactic(l=self.glon, b=self.glat, 
                                             unit=(u.deg, u.deg)),
                                             waveband=filtername,
                                             image_width=self.nir_im_size,
                                             **kwargs)
-                #print(images)                            
-                #This makes a big assumption that the first UKIDSS image is the one we want
+                #This makes a big assumption that the last UKIDSS/VISTA image is the one we want
                 fits.writeto(filename,
                              images[0][-1].data,images[0][-1].header,clobber=True)
         else:
@@ -468,7 +461,7 @@ class BaseDistObj():
         return(np.min(good_mags),np.max(good_mags))
         
             
-    def do_distance_estimate(self):
+    def do_distance_estimate(self,blue_cut=1.5,diffuse=0.7):
         """
         Calculate the extinction distance
         based on the surface density of blue
@@ -476,7 +469,8 @@ class BaseDistObj():
         besancon model.
         """
         self.load_data()
-        blue_cut = 1.5 #Magic number for J-K cut. Put this elsewhere
+        blue_cut = blue_cut #Magic number for J-K cut. Put this elsewhere
+        diffuse = diffuse
         kup = 17 #More magic numbers
         klo = 11
         
@@ -515,7 +509,7 @@ class BaseDistObj():
         print(self.density)
         print(self.density_upperlim)
         print(self.density_lowerlim)
-        d,upp,low = self.get_distance(kup,klo,blue_cut)
+        d,upp,low = self.get_distance(kup,klo,blue_cut,diffuse=diffuse)
         print(d)
         distance = d
         upper = upp
@@ -644,7 +638,7 @@ class BaseDistObj():
         plt.axvline(x=1.5,ls=":")
         plt.savefig(self.data_dir+self.name+"_hist.png")
     
-    def get_distance(self,kupperlim,klowerlim,colorcut):
+    def get_distance(self,kupperlim,klowerlim,colorcut,diffuse=0.7):
         """
         A faster method to get distances
         
@@ -656,7 +650,7 @@ class BaseDistObj():
         cloud_distances = np.arange(0,max_distance,50)[::-1]
         
 
-        Mags_per_kpc = 0.7
+        diffuse = 0.7
         
         foreground = self.model_data[self.model_data['Dist'] <= max_distance/1000.]
         foreground['corrj'] = foreground['J-K']+foreground['K'] + Mags_per_kpc*0.276*foreground['Dist']
