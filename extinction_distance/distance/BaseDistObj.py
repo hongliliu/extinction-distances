@@ -29,7 +29,7 @@ import aplpy
 from astropy import wcs
 from astropy import coordinates
 from astropy import units as u
-from astropy import Table
+from astropy.table import Table
 import astropy.wcs as pywcs
 from astropy.io import fits
 import matplotlib.pyplot as plt #For contouring and display
@@ -461,7 +461,7 @@ class BaseDistObj():
         return(np.min(good_mags),np.max(good_mags))
         
             
-    def do_distance_estimate(self,blue_cut=1.5,diffuse=0.7):
+    def do_distance_estimate(self,color_cut=1.5,diffuse=0.7):
         """
         Calculate the extinction distance
         based on the surface density of blue
@@ -469,7 +469,7 @@ class BaseDistObj():
         besancon model.
         """
         self.load_data()
-        blue_cut = blue_cut #Magic number for J-K cut. Put this elsewhere
+        blue_cut = color_cut #Magic number for J-K cut. Put this elsewhere
         diffuse = diffuse
         kup = 17 #More magic numbers
         klo = 11
@@ -553,12 +553,12 @@ class BaseDistObj():
         verts = np.array(contour,float)
         path = Path(verts)        
         if (survey == "UKIDSS") or (survey == "VISTA"):
-            points = np.column_stack((self.catalog.L,self.catalog.B))
+            points = np.column_stack((self.catalog['L'],self.catalog['B']))
             yo = path.contains_points(points)
             try:
-                self.catalog.add_column("CloudMask",yo,description="If on cloud")
+                self.catalog["CloudMask"] = yo
             except ValueError:
-                self.catalog.CloudMask = self.catalog.CloudMask + yo
+                self.catalog['CloudMask'] = self.catalog['CloudMask'] + yo
 
     def load_zpcorr(self):
         """
@@ -599,23 +599,23 @@ class BaseDistObj():
 
         f = interp1d(completeness[...,0],completeness[...,1],kind='linear')
 
-        good = catalog.where((catalog.KMag < kupperlim) & (catalog.KMag > klowerlim))
-        in_contour = good.where(good.CloudMask == 1)
-        JminK = in_contour.JMag - in_contour.KMag
-        blue_in_contour = in_contour.where((JminK < blue_cut))
-        blue_full = good.where(((good.JMag - good.KMag) < blue_cut))
+        good = catalog[(catalog['KMag'] < kupperlim) & (catalog['KMag'] > klowerlim)]
+        in_contour = good[good['CloudMask'] == 1]
+        JminK = in_contour['JMag'] - in_contour['KMag']
+        blue_in_contour = in_contour[JminK < blue_cut]
+        blue_full = good[((good['JMag'] - good['KMag']) < blue_cut)]
         #Restore this
         #if plot:
         #    self.plotcolorhistogram(good.JMag-good.KMag,blue_full.JMag-blue_full.KMag,label="Full_Cloud",survey=survey)
-        self.plot_color_histogram(in_contour.JMag-in_contour.KMag,
-                                  blue_in_contour.JMag-blue_in_contour.KMag)
+        self.plot_color_histogram(in_contour['JMag']-in_contour['KMag'],
+                                  blue_in_contour['JMag']-blue_in_contour['KMag'])
 
-        compfactor = f(blue_in_contour.KMag)
+        compfactor = f(blue_in_contour['KMag'])
         #print(compfactor)
         #print(blue_in_contour)
         #Hack. Really just wants np.ones()/compfactor
-        blue_stars = (blue_in_contour.KMag)/(blue_in_contour.KMag)/compfactor
-        n_blue = len(blue_in_contour.KMag)
+        blue_stars = (blue_in_contour['KMag'])/(blue_in_contour['KMag'])/compfactor
+        n_blue = len(blue_in_contour['KMag'])
         print("Number of blue stars in contour:")
         print(n_blue)
         print(sum(blue_stars))
@@ -638,7 +638,7 @@ class BaseDistObj():
         plt.axvline(x=1.5,ls=":")
         plt.savefig(self.data_dir+self.name+"_hist.png")
     
-    def get_distance(self,kupperlim,klowerlim,colorcut,diffuse=0.7):
+    def get_distance(self,kupperlim,klowerlim,color_cut,diffuse=0.7):
         """
         A faster method to get distances
         
@@ -650,7 +650,8 @@ class BaseDistObj():
         cloud_distances = np.arange(0,max_distance,50)[::-1]
         
 
-        diffuse = 0.7
+        colorcut=color_cut
+        Mags_per_kpc = diffuse
         
         foreground = self.model_data[self.model_data['Dist'] <= max_distance/1000.]
         foreground['corrj'] = foreground['J-K']+foreground['K'] + Mags_per_kpc*0.276*foreground['Dist']
