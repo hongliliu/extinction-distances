@@ -614,13 +614,15 @@ class BaseDistObj():
         nbins = kupperlim-klowerlim
         ns = blue_hist[0:nbins+1]
         fs = fs[0:nbins+1]
-        
+        print(ns)
+        print(fs)
         nmin = 0
-        nmax = 4*np.max(ns)
+        nmax = 3*np.max(ns)
         nbins = nmax-nmin
         binwidth = (nmax-nmin)/nbins
         norm_pdfs = []
         for n,f in zip(ns,fs):
+            print(n)
             if n > 1:
                 xx = np.linspace(nmin,nmax,num=nbins)
                 logL = np.array([log_L(eta,n,f) for eta in xx])
@@ -711,19 +713,21 @@ class BaseDistObj():
         lower = np.where(yy < self.density_lowerlim)
         upper = np.where(yy > self.density_upperlim)
     
+        center1 = np.where(yy <= self.density)
+        center2 = np.where(yy > self.density)
+
+        central = center1[0][-1]
+    
+    
         try:
             upperlim = upper[0][0]
         except IndexError:
-            upperlim = max_distancs/1000.
+            upperlim = (max_distancs-central)/1000.
         try:
             lowerlim = lower[0][-1]
         except IndexError:
             lowerlim = 0.
 
-        center1 = np.where(yy <= self.density)
-        center2 = np.where(yy > self.density)
-
-        central = center1[0][-1]
 
         pylab.axhline(y=self.density,linewidth=2,color='k')
         pylab.axhline(y=self.density_upperlim,color='k',linestyle=':')
