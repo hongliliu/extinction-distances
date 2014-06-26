@@ -38,7 +38,7 @@ from collections import defaultdict
 from matplotlib.path import Path
 from extinction_distance.support import smooth
 import pylab
-
+from scipy.special import gamma
 import matplotlib._cntr as _cntr
 
 from extinction_distance.distance import determine_distance
@@ -443,7 +443,7 @@ class BaseDistObj():
             raise(ValueError)
             
             
-    def determine_magnitude_cuts(self, completeness_cut = 0.5):
+    def determine_magnitude_cuts(self, completeness_cut = 0.4):
         """
         Determine the magnitudes we wish to consider for counting blue stars
         
@@ -482,10 +482,8 @@ class BaseDistObj():
         self.n_blue = 0
         poly = self.all_poly
         self.find_stars_in_contour(poly,self.nir_survey)
-        
-        
-        
-        blue,n_blue = self.count_blue_stars_in_contour(self.completeness,
+        self.nmin,self.nmean,self.nmax = self.count_blue_stars_in_contour(
+                                        self.completeness,
                                         blue_cut=blue_cut,
                                         kupperlim = kup,
                                         klowerlim = klo,
@@ -496,16 +494,10 @@ class BaseDistObj():
         print("Total area is...")
         print(self.total_poly_area)
         print("arcminutes")
-        self.allblue+=blue
-        self.n_blue +=n_blue
         self.model_data = self.load_besancon() #Read in the Besancon model
-        #print(self.model_data)
-        percenterror = 4*math.sqrt(self.n_blue)/self.n_blue
-        self.density = self.allblue/self.total_poly_area
-        self.density_upperlim = (((self.allblue)/self.total_poly_area)
-                                *(1+percenterror))
-        self.density_lowerlim = (((self.allblue)/self.total_poly_area)
-                                *(1-percenterror))
+        self.density = self.nmean/self.total_poly_area
+        self.density_lowerlim = self.nmin/self.total_poly_area
+        self.density_upperlim = self.nmax/self.total_poly_area
         print(self.density)
         print(self.density_upperlim)
         print(self.density_lowerlim)
@@ -585,17 +577,24 @@ class BaseDistObj():
         from astropy.table import Table
         return(Table.read(self.model))
      
+     
 
     def count_blue_stars_in_contour(self,completeness,blue_cut=1.3,kupperlim = 15.,klowerlim = 12.,ph_qual = False,plot=False,catalog=None,survey=None):
         """
         Determine which of the stars inside
-        the contour are blue. And calculate the
-        areal density of such stars. 
+        the contour are blue. 
+        
+        Estimate a confidence 0.95 confidence interval
+        for the number of stars present given the detection
+        completeness. Approximate by binning on magnitude
+        and using the binomial distribution for each of these
+        bins (with a fixed detection completeness).
+        
+        Numerically convolve resulting pdfs to get the pdf
+        for the sum of individual magnitude bins
         """
 
         print("Reached Count stage")
-
-        #print(completeness[...,0])
 
         f = interp1d(completeness[...,0],completeness[...,1],kind='linear')
 
@@ -603,25 +602,58 @@ class BaseDistObj():
         in_contour = good[good['CloudMask'] == 1]
         JminK = in_contour['JMag'] - in_contour['KMag']
         blue_in_contour = in_contour[JminK < blue_cut]
-        blue_full = good[((good['JMag'] - good['KMag']) < blue_cut)]
-        #Restore this
-        #if plot:
-        #    self.plotcolorhistogram(good.JMag-good.KMag,blue_full.JMag-blue_full.KMag,label="Full_Cloud",survey=survey)
         self.plot_color_histogram(in_contour['JMag']-in_contour['KMag'],
                                   blue_in_contour['JMag']-blue_in_contour['KMag'])
 
         compfactor = f(blue_in_contour['KMag'])
-        #print(compfactor)
-        #print(blue_in_contour)
-        #Hack. Really just wants np.ones()/compfactor
-        blue_stars = (blue_in_contour['KMag'])/(blue_in_contour['KMag'])/compfactor
-        n_blue = len(blue_in_contour['KMag'])
-        print("Number of blue stars in contour:")
-        print(n_blue)
-        print(sum(blue_stars))
-
-        return(sum(blue_stars),n_blue)
+        def log_L(eta,n,f):
+            return(np.log((gamma(eta+1))/(gamma(n+1)*gamma(eta-n+1)))+n*np.log(f)+(eta-n)*np.log(1-f)) 
         
+        blue_hist,bin_edges = np.histogram(blue_in_contour['KMag'],bins=[11,12,13,14,15,16,17,18,19])
+        fs = completeness[...,1]
+        nbins = kupperlim-klowerlim
+        ns = blue_hist[0:nbins+1]
+        fs = fs[0:nbins+1]
+        
+        nmin = 0
+        nmax = 4*np.max(ns)
+        nbins = nmax-nmin
+        binwidth = (nmax-nmin)/nbins
+        norm_pdfs = []
+        for n,f in zip(ns,fs):
+            if n > 1:
+                xx = np.linspace(nmin,nmax,num=nbins)
+                logL = np.array([log_L(eta,n,f) for eta in xx])
+                badpoints = [xx < n]
+                logL[badpoints] = -50
+                logL -= logL.max()
+                pdf = np.exp(logL)
+                pdf /= (binwidth*pdf.sum())
+                norm_pdfs.append(pdf)
+        nout = nbins
+        out_pdf = norm_pdfs[0]
+        for i in np.arange(len(norm_pdfs)):
+            if i > 0:
+                out_pdf = np.convolve(out_pdf,norm_pdfs[i])
+                nout = nout + nbins -1
+        xxx = np.linspace(nmin,nout,num=nout)
+        b = out_pdf.cumsum()
+        norm_const = b[-1]
+        b /= b[-1]
+        yoyo = np.argmax(out_pdf)
+        mmean = xxx[yoyo]
+        from scipy import interpolate
+        ya = interpolate.interp1d(b,xxx)
+        mmin = ya([0.025])
+        mmax = ya([0.975])
+        print("Estimated nnumber of blue stars in contour")
+        print(mmean)
+        print(mmin)
+        print(mmax)
+
+        return(mmin,mmean,mmax)
+        
+    
     
     def plot_color_histogram(self,JminK,JminK_blue):
         """
@@ -682,7 +714,7 @@ class BaseDistObj():
         try:
             upperlim = upper[0][0]
         except IndexError:
-            upperlim = 10.
+            upperlim = max_distancs/1000.
         try:
             lowerlim = lower[0][-1]
         except IndexError:
