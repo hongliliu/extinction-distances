@@ -215,7 +215,8 @@ def do_completeness(sex,source,contours,survey="UKIDSS",k_corr = 0,numtrials=50)
 
     recovery = np.zeros((numtrials,len(mags)))
     for c in range(numtrials):
-        print("Starting run #"+str(c))
+        if c % 10 == 0:
+            print("Starting run #"+str(c))
         d,h = fits.getdata(os.path.join(source+"_data",source+"_"+survey+"_K.fits"),header=True)
         w = wcs.WCS(h)
         #all_poly = parse_ds9_regions(os.path.join(source+"_data",source+".reg"))

@@ -116,10 +116,10 @@ class BaseDistObj():
     
         self.photocatalog = os.path.join(self.data_dir,self.name+"_MyCatalog_"+self.nir_survey+".vot")
     
-        try:
-            self.get_contours(self.continuum)
-        except:
-            pass
+        #try:
+        #    self.get_contours(self.continuum)
+        #except:
+        #    pass
     
     def calculate_continuum_level(self,cont_survey=None,Ak=1.0,T=20.*u.K):
         """
@@ -316,9 +316,14 @@ class BaseDistObj():
                     self.good_contour = True
                     print("This was the contour containing the center")
             self.contours = wcs_paths[index]
+            #self.contours[:,0] -= 0.02
+            #self.contours[:,1] += 0.02
+            #print(self.contours[:,1])
+            
         else:
             self.good_contour = True
             self.contours =  wcs_paths[0]
+            
         
         #This selects a contour containing the center
         #Now we trim the contour to the boundaries of the UKIDSS image
@@ -443,7 +448,7 @@ class BaseDistObj():
             raise(ValueError)
             
             
-    def determine_magnitude_cuts(self, completeness_cut = 0.4):
+    def determine_magnitude_cuts(self, completeness_cut = 0.40):
         """
         Determine the magnitudes we wish to consider for counting blue stars
         
@@ -455,8 +460,8 @@ class BaseDistObj():
         
         mags = self.completeness[:,0]
         comps = self.completeness[:,1]
-        print(mags)
-        print(comps)
+        #print(mags)
+        #print(comps)
         good_mags = mags[comps > completeness_cut]
         return(np.min(good_mags),np.max(good_mags))
         
@@ -502,7 +507,7 @@ class BaseDistObj():
         print(self.density_upperlim)
         print(self.density_lowerlim)
         d,upp,low = self.get_distance(kup,klo,blue_cut,diffuse=diffuse)
-        print(d)
+        #print(d)
         distance = d
         upper = upp
         lower = low
@@ -606,48 +611,63 @@ class BaseDistObj():
                                   blue_in_contour['JMag']-blue_in_contour['KMag'])
 
         compfactor = f(blue_in_contour['KMag'])
-        def log_L(eta,n,f):
-            return(np.log((gamma(eta+1))/(gamma(n+1)*gamma(eta-n+1)))+n*np.log(f)+(eta-n)*np.log(1-f)) 
         
-        blue_hist,bin_edges = np.histogram(blue_in_contour['KMag'],bins=[11,12,13,14,15,16,17,18,19])
-        fs = completeness[...,1]
-        nbins = kupperlim-klowerlim
-        ns = blue_hist[0:nbins+1]
-        fs = fs[0:nbins+1]
+        from scipy.stats import poisson
+        ns = np.ones_like(compfactor)
+        lam = np.dot(ns,1./compfactor)
+        mmean = lam
+        mmin,mmax = poisson.interval(0.99, lam)
+        
+        #def log_L(eta,n,f):
+        #    return(np.log((gamma(eta+1))/(gamma(n+1)*gamma(eta-n+1)))+n*np.log(f)+(eta-n)*np.log(1-f)) 
+        #
+        #blue_hist,bin_edges = np.histogram(blue_in_contour['KMag'],bins=[11,12,13,14,15,16,17,18,19])
+        #fs = completeness[...,1]
+        #nbins = kupperlim-klowerlim
+        #print(klowerlim)
+        #print(kupperlim)
+        #ns = blue_hist[0:nbins]
+        #fs = fs[0:nbins]
+        #print(ns)
+        #print(fs)
+        #nmin = 0
+        #nmax = 3*np.max(ns)
+        #nbins = nmax-nmin
+        #binwidth = (nmax-nmin)/nbins
+        #norm_pdfs = []
+        #for n,f in zip(ns,fs):
+        #    print(n)
+        #    if n > 1:
+        #        xx = np.linspace(nmin,nmax,num=nbins)
+        #        logL = np.array([log_L(eta,n,f) for eta in xx])
+        #        badpoints = [xx < n]
+        #        logL[badpoints] = -50
+        #        logL -= logL.max()
+        #        pdf = np.exp(logL)
+        #        pdf /= (binwidth*pdf.sum())
+        #        norm_pdfs.append(pdf)
+        #nout = nbins
+        #out_pdf = norm_pdfs[0]
+        #for i in np.arange(len(norm_pdfs)):
+        #   if i > 0:
+        #        out_pdf = np.convolve(out_pdf,norm_pdfs[i])
+        #        nout = nout + nbins -1
+        #xxx = np.linspace(nmin,nout,num=nout)
+        #b = out_pdf.cumsum()
+        #norm_const = b[-1]
+        #b /= b[-1]
+        #yoyo = np.argmax(out_pdf)
+        #mmean = xxx[yoyo]
+        #from scipy import interpolate
+        #ya = interpolate.interp1d(b,xxx)
+        #mmin = ya([0.025])
+        #mmax = ya([0.975])
+        print("Number of blue stars in contour")
+        print(len(ns))
+        print("Observed in each bin:")
         print(ns)
-        print(fs)
-        nmin = 0
-        nmax = 3*np.max(ns)
-        nbins = nmax-nmin
-        binwidth = (nmax-nmin)/nbins
-        norm_pdfs = []
-        for n,f in zip(ns,fs):
-            print(n)
-            if n > 1:
-                xx = np.linspace(nmin,nmax,num=nbins)
-                logL = np.array([log_L(eta,n,f) for eta in xx])
-                badpoints = [xx < n]
-                logL[badpoints] = -50
-                logL -= logL.max()
-                pdf = np.exp(logL)
-                pdf /= (binwidth*pdf.sum())
-                norm_pdfs.append(pdf)
-        nout = nbins
-        out_pdf = norm_pdfs[0]
-        for i in np.arange(len(norm_pdfs)):
-            if i > 0:
-                out_pdf = np.convolve(out_pdf,norm_pdfs[i])
-                nout = nout + nbins -1
-        xxx = np.linspace(nmin,nout,num=nout)
-        b = out_pdf.cumsum()
-        norm_const = b[-1]
-        b /= b[-1]
-        yoyo = np.argmax(out_pdf)
-        mmean = xxx[yoyo]
-        from scipy import interpolate
-        ya = interpolate.interp1d(b,xxx)
-        mmin = ya([0.025])
-        mmax = ya([0.975])
+        print("Completeness in each bin")
+        print(compfactor)
         print("Estimated nnumber of blue stars in contour")
         print(mmean)
         print(mmin)
@@ -722,7 +742,7 @@ class BaseDistObj():
         try:
             upperlim = upper[0][0]
         except IndexError:
-            upperlim = (max_distancs-central)/1000.
+            upperlim = (max_distance-central)/1000.
         try:
             lowerlim = lower[0][-1]
         except IndexError:
