@@ -238,7 +238,7 @@ class BaseDistObj():
         
         if (not os.path.isfile(self.model)) or clobber:
             print("Fetching Besancon model from server...")
-            besancon_model = besancon.Besancon.query(email='adrian.gutierrez@yale.edu',
+            besancon_model = besancon.Besancon.query(email='jonathan.b.foster@yale.edu',
                                             glon=self.glon,glat=self.glat,
                                             smallfield=True,
                                             area = 0.04,
@@ -279,6 +279,8 @@ class BaseDistObj():
         img = hdulist[0].data
         if not Ak:
             contour_level = self.contour_level #10 av in Jy?
+            print("Using a contour level of: "+str(round(contour_level,3)))
+            
         else:
             contour_level = self.calculate_continuum_level(
                                  cont_survey=self.cont_survey, 
@@ -306,6 +308,8 @@ class BaseDistObj():
         index = 0
         self.good_contour = False
         
+        print(self.glon,self.glat)
+        
         if len(wcs_paths) > 1:
             print("More than one contour")
             for i,wcs_path in enumerate(wcs_paths):
@@ -315,6 +319,8 @@ class BaseDistObj():
                     index = i
                     self.good_contour = True
                     print("This was the contour containing the center")
+            #index = 1
+            #self.good_contour = True
             self.contours = wcs_paths[index]
             #self.contours[:,0] -= 0.02
             #self.contours[:,1] += 0.02
@@ -348,8 +354,11 @@ class BaseDistObj():
                 l,b = gal.l.degree,gal.b.degree
                 mycoords.append((l,b))
             p1 = shapely.geometry.Polygon(self.contours)
-            p1.buffer(0)
+            p1 = p1.buffer(0)
+            #print(p1.is_valid)
             p2 = shapely.geometry.Polygon(mycoords)
+            #p2.buffer(0)
+            #print(p2.is_valid)
             ya = p1.intersection(p2)
             #print(ya)
             try:
@@ -441,11 +450,11 @@ class BaseDistObj():
             else:
                 kcorr = self.load_zpcorr()
             if (force_completeness) or (not os.path.isfile(self.completeness_filename)):
-                determine_completeness.do_completeness(sex,self.name,self.contours,survey=self.nir_survey,k_corr=kcorr,numtrials = 100)
+                determine_completeness.do_completeness(sex,self.name,self.contours,survey=self.nir_survey,k_corr=kcorr,numtrials = 30)
             self.catalog = Table.read(self.photocatalog)
         else:
             print("Bad contour (too small, or does not contain center point)")
-            raise(ValueError)
+            raise(NoContourException("No valid contour"))
             
             
     def determine_magnitude_cuts(self, completeness_cut = 0.40):
@@ -460,8 +469,10 @@ class BaseDistObj():
         
         mags = self.completeness[:,0]
         comps = self.completeness[:,1]
-        #print(mags)
-        #print(comps)
+        print("Completeness Information: ")
+        print(mags)
+        print(comps)
+        print("Cutting at completeness = "+str(completeness_cut))
         good_mags = mags[comps > completeness_cut]
         return(np.min(good_mags),np.max(good_mags))
         
@@ -479,7 +490,11 @@ class BaseDistObj():
         kup = 17 #More magic numbers
         klo = 11
         
-        klo,kup = self.determine_magnitude_cuts()
+        #comp_cuts = [0.8,0.7,0.6,0.5,0.4]
+        
+        #for comp_cut in comp_cuts:
+        
+        klo,kup = self.determine_magnitude_cuts(completeness_cut = 0.6)
         
         print("Using stars between K = "+str(klo)+" and "+str(kup))
         
@@ -618,50 +633,6 @@ class BaseDistObj():
         mmean = lam
         mmin,mmax = poisson.interval(0.99, lam)
         
-        #def log_L(eta,n,f):
-        #    return(np.log((gamma(eta+1))/(gamma(n+1)*gamma(eta-n+1)))+n*np.log(f)+(eta-n)*np.log(1-f)) 
-        #
-        #blue_hist,bin_edges = np.histogram(blue_in_contour['KMag'],bins=[11,12,13,14,15,16,17,18,19])
-        #fs = completeness[...,1]
-        #nbins = kupperlim-klowerlim
-        #print(klowerlim)
-        #print(kupperlim)
-        #ns = blue_hist[0:nbins]
-        #fs = fs[0:nbins]
-        #print(ns)
-        #print(fs)
-        #nmin = 0
-        #nmax = 3*np.max(ns)
-        #nbins = nmax-nmin
-        #binwidth = (nmax-nmin)/nbins
-        #norm_pdfs = []
-        #for n,f in zip(ns,fs):
-        #    print(n)
-        #    if n > 1:
-        #        xx = np.linspace(nmin,nmax,num=nbins)
-        #        logL = np.array([log_L(eta,n,f) for eta in xx])
-        #        badpoints = [xx < n]
-        #        logL[badpoints] = -50
-        #        logL -= logL.max()
-        #        pdf = np.exp(logL)
-        #        pdf /= (binwidth*pdf.sum())
-        #        norm_pdfs.append(pdf)
-        #nout = nbins
-        #out_pdf = norm_pdfs[0]
-        #for i in np.arange(len(norm_pdfs)):
-        #   if i > 0:
-        #        out_pdf = np.convolve(out_pdf,norm_pdfs[i])
-        #        nout = nout + nbins -1
-        #xxx = np.linspace(nmin,nout,num=nout)
-        #b = out_pdf.cumsum()
-        #norm_const = b[-1]
-        #b /= b[-1]
-        #yoyo = np.argmax(out_pdf)
-        #mmean = xxx[yoyo]
-        #from scipy import interpolate
-        #ya = interpolate.interp1d(b,xxx)
-        #mmin = ya([0.025])
-        #mmax = ya([0.975])
         print("Number of blue stars in contour")
         print(len(ns))
         print("Observed in each bin:")
@@ -742,10 +713,12 @@ class BaseDistObj():
         try:
             upperlim = upper[0][0]
         except IndexError:
+            print("Failed to find upper distance limit")
             upperlim = (max_distance-central)/1000.
         try:
             lowerlim = lower[0][-1]
         except IndexError:
+            print("Failed to find lower distance limit")
             lowerlim = 0.
 
 
@@ -770,11 +743,15 @@ class BaseDistObj():
         print("Size in Inches: "+str(Size))
         pylab.savefig(os.path.join(self.name+"_data",self.name+"_Distance_"+self.nir_survey+'.png'))
         pylab.clf()
+        pylab.close('all')
 
         print("Distance = "+str(central)+"+"+str(upperlim-central)+str(lowerlim-central))
         perr = upperlim-central
         merr = central-lowerlim
         return(central,perr,merr)
+        
+class NoContourException(Exception):
+    pass
         
 if __name__ == '__main__':
     unittest.main()

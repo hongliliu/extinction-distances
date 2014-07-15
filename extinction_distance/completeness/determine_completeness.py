@@ -56,7 +56,7 @@ import determine_zp
 import extinction_distance.support.pyspherematch as pyspherematch #Better version
 
 
-flag_limit = 4
+flag_limit = 8
 
 def main():
     #Setup
@@ -77,7 +77,7 @@ def do_setup(source,survey="UKIDSS"):
     elif survey == "VISTA":
     #http://casu.ast.cam.ac.uk/surveys-projects/vista/technical/
         sex.config['GAIN'] = 4.19 
-        sex.config['SATUR_LEVEL'] = 32000.0
+        sex.config['SATUR_LEVEL'] = 42000.0
         sex.config['MAG_ZEROPOINT'] = 24.
         sex.config['PHOT_APERTURES'] = 5.
 
@@ -123,7 +123,7 @@ def do_phot(sex,source,survey="UKIDSS"):
         j_correct = determine_zp.calibrate(source,"J",survey="2MASS")
     except IndexError:
         print("Failed to calibrate, assuming no correction")
-        k_correct = 0
+        j_correct = 0
 
     Kcatalog = Table(Kcatalog)
     Jcatalog = Table(Jcatalog)
@@ -135,7 +135,7 @@ def do_phot(sex,source,survey="UKIDSS"):
     idxs1, idxs2, ds = pyspherematch.spherematch(np.array(Kcatalog['ALPHA_J2000']),
                                                  np.array(Kcatalog['DELTA_J2000']),
                                                  np.array(Jcatalog['ALPHA_J2000']),
-                                                 np.array(Jcatalog['DELTA_J2000']),tol=0.5/3600.)
+                                                 np.array(Jcatalog['DELTA_J2000']),tol=1./3600.)
     
     Kcatalog['MAG_APER'] -= k_correct
     Jcatalog['MAG_APER'] -= j_correct
@@ -206,7 +206,11 @@ def do_completeness(sex,source,contours,survey="UKIDSS",k_corr = 0,numtrials=50)
     if survey == "VISTA":
         mags = [11,12,13,14,15,16,17,18,19]
         percent = {11:[],12:[],13:[],14:[],15:[],16:[],17:[],18:[],19:[]}
-        zp = 25+k_corr
+        
+        #mags = [11,19]
+        #percent = {11:[],19:[]}
+        
+        zp = 24.+k_corr
     if survey == "2MASS":
         #2MASS should be fine down to ~5-6
         mags = [7,8,9,10,11,12,13,14,15]
@@ -217,6 +221,7 @@ def do_completeness(sex,source,contours,survey="UKIDSS",k_corr = 0,numtrials=50)
     for c in range(numtrials):
         if c % 10 == 0:
             print("Starting run #"+str(c))
+            #print(recovery)
         d,h = fits.getdata(os.path.join(source+"_data",source+"_"+survey+"_K.fits"),header=True)
         w = wcs.WCS(h)
         #all_poly = parse_ds9_regions(os.path.join(source+"_data",source+".reg"))
@@ -224,12 +229,12 @@ def do_completeness(sex,source,contours,survey="UKIDSS",k_corr = 0,numtrials=50)
         fake_stars = insert_fake_stars(d,h,mags,all_poly,w,sex,survey=survey,zp=zp)
         #Recover returns an array of [1,1,1,0,0,0,1,0,0,1]
         r = recover(fake_stars,sex)
-        recovery[c:] = r
+        recovery[c,:] = r
+        #print(recovery.shape)
     sex.clean(config=True,catalog=True,check=True)
 
-    #print(recovery)
-    #print(mags)
-    #print(recovery.sum(axis=0)/numtrials)
+    print(mags)
+    print(recovery.sum(axis=0)/numtrials)
     comp = recovery.sum(axis=0)/numtrials
     print(comp)
     f = open(os.path.join(source+"_data/",source+"_completeness_"+survey+".pkl"),'w')
@@ -243,10 +248,11 @@ def insert_fake_stars(d,h,mags,all_poly,WCS,sex,survey="UKIDSS",zp=25.):
     ysize = h['NAXIS2']
     #Insert fake star
     if survey== "UKIDSS":
-        size = 5
+        size = 11
+        sigma = 2.5/2.35
     if survey== "VISTA":
-        size = 5
-        
+        size = 11
+        sigma = 2.5/2.35 #FWHM ~ 2.5 pixels
     if survey == "2MASS":
         size = 5
 
@@ -286,7 +292,7 @@ def insert_fake_stars(d,h,mags,all_poly,WCS,sex,survey="UKIDSS",zp=25.):
         #Now we pass in zp instead
         expfactor = (magnitude - zp)/(-2.5)
         counts = math.pow(10.,expfactor)
-        g = gauss_kern(size,counts) #5 is rough guess for FWHM
+        g = gauss_kern(size,sigma,counts) #5 is rough guess for FWHM
     #       print d[y-size:y+size+1,x-size:x+size+1].size
     #       print g.size
         d[y-size:y+size+1,x-size:x+size+1] += g #Damn backward numpy arrays
@@ -295,6 +301,11 @@ def insert_fake_stars(d,h,mags,all_poly,WCS,sex,survey="UKIDSS",zp=25.):
     return(fake_stars)
 
 def insert_fake_star(d,h,mag):
+    """
+    Currently this function is NOT used
+    
+    """
+    
     xsize = h['NAXIS1']
     ysize = h['NAXIS2']
     #Insert fake star
@@ -319,8 +330,8 @@ def insert_fake_star(d,h,mag):
 def recover(properties,sex):
     sex.run("TestOuput.fits")
     catalog = sex.catalog()
-    ptol = 1
-    mtol = 1.5
+    ptol = 2.
+    mtol = 2.5
     found = np.zeros(len(properties))
     for star in catalog:
         #print(star['X_IMAGE'],star['Y_IMAGE'],star['MAG_APER'])
@@ -337,10 +348,15 @@ def recover(properties,sex):
     #else:
     #       print("Not Found")
     #print(found)
+    #if found[0] == 0:
+    #    for prop in properties:
+    #        print(prop)
+    #    raise(IOError)
     return(found)
+    
 #       catalog = sex.catalog()
 
-def gauss_kern(size, flux, sizey=None):
+def gauss_kern(size, sigma, flux, sizey=None):
     """ Returns a 2D gauss kernel array as a fake star """
     size = int(size)
     if not sizey:
@@ -348,7 +364,7 @@ def gauss_kern(size, flux, sizey=None):
     else:
         sizey = int(sizey)
     x, y = np.mgrid[-size:size+1, -sizey:sizey+1]
-    g = np.exp(-(x**2/float(size)+y**2/float(sizey)))
+    g = np.exp(-(x**2/float(2*sigma**2)+y**2/float(2*sigma**2)))
     normfactor = g.sum()/flux
     return g / normfactor
 
