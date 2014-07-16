@@ -56,7 +56,7 @@ import determine_zp
 import extinction_distance.support.pyspherematch as pyspherematch #Better version
 
 
-flag_limit = 8
+flag_limit = 4
 
 def main():
     #Setup
@@ -330,8 +330,8 @@ def insert_fake_star(d,h,mag):
 def recover(properties,sex):
     sex.run("TestOuput.fits")
     catalog = sex.catalog()
-    ptol = 2.
-    mtol = 2.5
+    ptol = 1.
+    mtol = 2.0
     found = np.zeros(len(properties))
     for star in catalog:
         #print(star['X_IMAGE'],star['Y_IMAGE'],star['MAG_APER'])

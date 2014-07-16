@@ -446,11 +446,11 @@ class BaseDistObj():
         if self.contour_area > 0.0001 and self.good_contour:
             sex = determine_completeness.do_setup(self.name,survey=self.nir_survey)
             if ((not os.path.isfile(self.photocatalog)) or (not os.path.isfile(self.zpcorr_filename))) or clobber:
-                kcorr = determine_completeness.do_phot(sex,self.name,survey=self.nir_survey)
+                self.kcorr = determine_completeness.do_phot(sex,self.name,survey=self.nir_survey)
             else:
-                kcorr = self.load_zpcorr()
+                self.kcorr = self.load_zpcorr()
             if (force_completeness) or (not os.path.isfile(self.completeness_filename)):
-                determine_completeness.do_completeness(sex,self.name,self.contours,survey=self.nir_survey,k_corr=kcorr,numtrials = 30)
+                determine_completeness.do_completeness(sex,self.name,self.contours,survey=self.nir_survey,k_corr=self.kcorr,numtrials = 30)
             self.catalog = Table.read(self.photocatalog)
         else:
             print("Bad contour (too small, or does not contain center point)")
@@ -482,7 +482,10 @@ class BaseDistObj():
         Calculate the extinction distance
         based on the surface density of blue
         stars inside the contour and the
-        besancon model.
+        Besancon model. We want to perform this estimate over
+        a range of different limiting magnitudes and take the
+        spread in the results as the error (or quote a lower
+        bound from Poisson)
         """
         self.load_data()
         blue_cut = color_cut #Magic number for J-K cut. Put this elsewhere
@@ -490,59 +493,104 @@ class BaseDistObj():
         kup = 17 #More magic numbers
         klo = 11
         
-        #comp_cuts = [0.8,0.7,0.6,0.5,0.4]
+        #inds = [ 0, 1, 2, 3, 4, 5, 6, 7, 8]
+        #mags = [11,12,13,14,15,16,17,18,19]
         
-        #for comp_cut in comp_cuts:
+        inds = [3,4,5,6,7]
         
-        klo,kup = self.determine_magnitude_cuts(completeness_cut = 0.6)
+        mags = self.completeness[:,0]
+        comps = self.completeness[:,1]
         
-        print("Using stars between K = "+str(klo)+" and "+str(kup))
+        distance_estimates = []
+        lower_error = []
+        higher_error = []
         
-        self.allblue = 0
-        self.n_blue = 0
-        poly = self.all_poly
-        self.find_stars_in_contour(poly,self.nir_survey)
-        self.nmin,self.nmean,self.nmax = self.count_blue_stars_in_contour(
-                                        self.completeness,
-                                        blue_cut=blue_cut,
-                                        kupperlim = kup,
-                                        klowerlim = klo,
-                                        ph_qual = False,
-                                        catalog=self.catalog,
-                                        plot=True,
-                                        survey=self.nir_survey)
-        print("Total area is...")
-        print(self.total_poly_area)
-        print("arcminutes")
-        self.model_data = self.load_besancon() #Read in the Besancon model
-        self.density = self.nmean/self.total_poly_area
-        self.density_lowerlim = self.nmin/self.total_poly_area
-        self.density_upperlim = self.nmax/self.total_poly_area
-        print(self.density)
-        print(self.density_upperlim)
-        print(self.density_lowerlim)
-        d,upp,low = self.get_distance(kup,klo,blue_cut,diffuse=diffuse)
-        #print(d)
-        distance = d
-        upper = upp
-        lower = low
-        print("==== Distance Results ====")
-        print(distance)
-        print(lower)
-        print(upper)
-        print("==========================")
-        self.distance_est = distance
-        self.distance_lolim = lower
-        self.distance_hilim = upper
+        
+        print(self.completeness)
+        
+        for ind in inds:
+            if comps[ind] > 0.25:
+                kup = mags[ind]
+            
+            #klo,kup = self.determine_magnitude_cuts(completeness_cut = comp_cut)
+        
+                print("Using stars between K = "+str(klo)+" and "+str(kup))
+        
+                self.allblue = 0
+                self.n_blue = 0
+                poly = self.all_poly
+                self.find_stars_in_contour(poly,self.nir_survey)
+                self.nmin,self.nmean,self.nmax = self.count_blue_stars_in_contour(
+                                                self.completeness,
+                                                blue_cut=blue_cut,
+                                                kupperlim = kup,
+                                                klowerlim = klo,
+                                                ph_qual = False,
+                                                catalog=self.catalog,
+                                                plot=True,
+                                                survey=self.nir_survey)
+                print("Total area is...")
+                print(self.total_poly_area)
+                print("arcminutes")
+                self.model_data = self.load_besancon() #Read in the Besancon model
+                self.density = self.nmean/self.total_poly_area
+                self.density_lowerlim = self.nmin/self.total_poly_area
+                self.density_upperlim = self.nmax/self.total_poly_area
+                print(self.density)
+                print(self.density_upperlim)
+                print(self.density_lowerlim)
+                d,upp,low = self.get_distance(kup,klo,blue_cut,diffuse=diffuse)
+                #print(d)
+                distance = d
+                upper = upp
+                lower = low
+                print("==== Distance Results ====")
+                print(distance)
+                print(lower)
+                print(upper)
+                print("==========================")
+                self.distance_est = distance
+                self.distance_lolim = lower
+                self.distance_hilim = upper
+                results = {"name":self.name,"glon":self.glon,"glat":self.glat,
+                           "area":self.contour_area,"n_obs_blue":self.n_blue,
+                           "n_est_blue":self.allblue,"dist":self.distance_est,
+                           "dist_lolim":self.distance_lolim,"dist_hilim":self.distance_hilim,
+                           "klo":klo, "kup":kup, "kcorr":self.kcorr}
+                f = open(os.path.join(self.name+"_data/",self.name+"_results_k"+str(kup)+".pkl"),'w')
+                pickle.dump(results,f)
+                f.close()
+                distance_estimates.append(self.distance_est)
+                lower_error.append(lower)
+                higher_error.append(upper)
+                
+        if (len(distance_estimates) > 1):
+            drange = np.ptp(distance_estimates)
+            sigma = drange/4.
+            self.distance_est = np.median(distance_estimates)
+            lower_min = np.min(lower_error)
+            upper_min = np.min(higher_error)
+            if sigma < lower_min:
+                lowerlim = lower_min
+            else:
+                lowerlim = sigma
+            if sigma < upper_min:
+                upperlim = upper_min
+            else:
+                upperlim = sigma
+            
+            self.distance_lolim = lowerlim
+            self.distance_hilim = upperlim
+
+        else:
+            pass #just use the most recent value. Should rarely happen
+        
         results = {"name":self.name,"glon":self.glon,"glat":self.glat,
                    "area":self.contour_area,"n_obs_blue":self.n_blue,
                    "n_est_blue":self.allblue,"dist":self.distance_est,
                    "dist_lolim":self.distance_lolim,"dist_hilim":self.distance_hilim,
-                   "klo":klo, "kup":kup}
-        f = open(os.path.join(self.name+"_data/",self.name+"_results.pkl"),'w')
-        pickle.dump(results,f)
-        f.close()
-        
+                   "klo":klo, "kup":kup, "kcorr":self.kcorr}
+        print(results)
         return(results)
         
     
@@ -623,7 +671,7 @@ class BaseDistObj():
         JminK = in_contour['JMag'] - in_contour['KMag']
         blue_in_contour = in_contour[JminK < blue_cut]
         self.plot_color_histogram(in_contour['JMag']-in_contour['KMag'],
-                                  blue_in_contour['JMag']-blue_in_contour['KMag'])
+                                  blue_in_contour['JMag']-blue_in_contour['KMag'],kupperlim)
 
         compfactor = f(blue_in_contour['KMag'])
         
@@ -635,10 +683,10 @@ class BaseDistObj():
         
         print("Number of blue stars in contour")
         print(len(ns))
-        print("Observed in each bin:")
-        print(ns)
-        print("Completeness in each bin")
-        print(compfactor)
+        #print("Observed in each bin:")
+        #print(ns)
+        #print("Completeness in each bin")
+        #print(compfactor)
         print("Estimated nnumber of blue stars in contour")
         print(mmean)
         print(mmin)
@@ -648,7 +696,7 @@ class BaseDistObj():
         
     
     
-    def plot_color_histogram(self,JminK,JminK_blue):
+    def plot_color_histogram(self,JminK,JminK_blue,kupperlim):
         """
         Make the three check-images
         1) 3-color image of region
@@ -661,7 +709,7 @@ class BaseDistObj():
         plt.xlabel("J-K [mag]")
         plt.ylabel("Number of Stars")
         plt.axvline(x=1.5,ls=":")
-        plt.savefig(self.data_dir+self.name+"_hist.png")
+        plt.savefig(self.data_dir+self.name+"_hist_k"+str(kupperlim)+".png")
     
     def get_distance(self,kupperlim,klowerlim,color_cut,diffuse=0.7):
         """
@@ -741,7 +789,7 @@ class BaseDistObj():
         fig.set_size_inches(6,6)
         Size = fig.get_size_inches()
         print("Size in Inches: "+str(Size))
-        pylab.savefig(os.path.join(self.name+"_data",self.name+"_Distance_"+self.nir_survey+'.png'))
+        pylab.savefig(os.path.join(self.name+"_data",self.name+"_Distance_"+self.nir_survey+"_k"+str(kupperlim)+'.png'))
         pylab.clf()
         pylab.close('all')
 
