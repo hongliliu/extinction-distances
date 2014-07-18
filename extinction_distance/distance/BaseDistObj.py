@@ -770,6 +770,7 @@ class BaseDistObj():
         print("Size in Inches: "+str(Size))
         pylab.savefig(os.path.join(self.name+"_data",self.name+"_Distance_"+self.nir_survey+'.png'))
         pylab.clf()
+	pylab.close('all')
 
         print("Distance = "+str(central)+"+"+str(upperlim-central)+str(lowerlim-central))
         perr = upperlim-central
