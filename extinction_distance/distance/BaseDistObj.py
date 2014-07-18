@@ -56,7 +56,7 @@ import warnings
 from astroquery.magpis import Magpis
 
 class BaseDistObj():
-    def __init__(self,name,coords,nir_survey=None,cont_survey=None):
+    def __init__(self,name,coords,nir_survey=None,cont_survey=None,Ak=1.0):
         """
         A BaseDistObj is defined by name and coordinates
         In order to do anything useful, you must also 
@@ -94,9 +94,9 @@ class BaseDistObj():
         self.nir_directory = "" # XXX This needs to point to a way to save XXX
         self.nir_im_size = 6*u.arcmin #Size of NIR cutout (symmetric) in arcminutes
         self.small_nir_im_size = 3*u.arcmin #Size of NIR image for Sextractor
-        self.continuum_im_size = 4*u.arcmin
+        self.continuum_im_size = 10*u.arcmin
         
-        self.contour_level = self.calculate_continuum_level(cont_survey=cont_survey)
+        self.contour_level = self.calculate_continuum_level(cont_survey=cont_survey,Ak=Ak)
         
         self.jim = self.data_dir+self.name+"_"+self.nir_survey+"_J.fits"
         self.him = self.data_dir+self.name+"_"+self.nir_survey+"_H.fits"
@@ -328,8 +328,7 @@ class BaseDistObj():
             
         else:
             self.good_contour = True
-            self.contours =  wcs_paths[0]
-            
+            self.contours =  wcs_paths[0]            
         
         #This selects a contour containing the center
         #Now we trim the contour to the boundaries of the UKIDSS image
@@ -357,7 +356,7 @@ class BaseDistObj():
             p1 = p1.buffer(0)
             #print(p1.is_valid)
             p2 = shapely.geometry.Polygon(mycoords)
-            #p2.buffer(0)
+            p2.buffer(0)
             #print(p2.is_valid)
             ya = p1.intersection(p2)
             #print(ya)
@@ -371,15 +370,27 @@ class BaseDistObj():
             except AttributeError: #MultiPolygon
                 mycontours = []
                 for j,poly in enumerate(ya):
-                    path = Path(poly.exterior.coords.xy)
-                    if path.contains_point((self.glon,self.glat)):
-                        self.good_contour = True
-                        index = i
-                        print("This was the contour containing the center")
-                        xx,yy = poly.exterior.coords.xy
-                        for ix,iy in zip(xx,yy):
-                            mycontours.append((ix,iy))
-                        self.contours = np.array(mycontours)
+                    try:
+                        #print(poly)
+                        yoyo = np.asarray(poly.exterior.coords.xy)
+                        #print(yoyo.shape)
+                        #print(yoyo)
+                        yoyo2 = yoyo.T
+                        #print(poly.exterior.coords.xy)
+                        #yya = poly.exterior.coords.xy[0]
+                        #print(yya.shape)
+                        #print(yoyo2)
+                        path = Path(yoyo2)
+                        if path.contains_point((self.glon,self.glat)):
+                            self.good_contour = True
+                            index = i
+                            print("This was the contour containing the center")
+                            xx,yy = poly.exterior.coords.xy
+                            for ix,iy in zip(xx,yy):
+                                mycontours.append((ix,iy))
+                            self.contours = np.array(mycontours)
+                    except IOError:
+                        pass
                         
         self.contour_area = self.calc_contour_area(self.contours)
         
@@ -450,7 +461,7 @@ class BaseDistObj():
             else:
                 self.kcorr = self.load_zpcorr()
             if (force_completeness) or (not os.path.isfile(self.completeness_filename)):
-                determine_completeness.do_completeness(sex,self.name,self.contours,survey=self.nir_survey,k_corr=self.kcorr,numtrials = 30)
+                determine_completeness.do_completeness(sex,self.name,self.contours,survey=self.nir_survey,k_corr=self.kcorr,numtrials = 100)
             self.catalog = Table.read(self.photocatalog)
         else:
             print("Bad contour (too small, or does not contain center point)")
@@ -473,7 +484,7 @@ class BaseDistObj():
         print(mags)
         print(comps)
         print("Cutting at completeness = "+str(completeness_cut))
-        good_mags = mags[comps > completeness_cut]
+        good_mags = mags[(comps > completeness_cut) & (mags < 18)] #Our model only goes to K = 17
         return(np.min(good_mags),np.max(good_mags))
         
             
@@ -492,12 +503,14 @@ class BaseDistObj():
         diffuse = diffuse
         kup = 17 #More magic numbers
         klo = 11
+        comp_cut = 0.4
         
         #inds = [ 0, 1, 2, 3, 4, 5, 6, 7, 8]
         #mags = [11,12,13,14,15,16,17,18,19]
         
+        #This part is now redundant again
         inds = [3,4,5,6,7]
-        
+        inds = [6]
         mags = self.completeness[:,0]
         comps = self.completeness[:,1]
         
@@ -509,81 +522,81 @@ class BaseDistObj():
         print(self.completeness)
         
         for ind in inds:
-            if comps[ind] > 0.25:
-                kup = mags[ind]
+            #if comps[ind] > 0.25:
+            #    kup = mags[ind]
+            klo,kup = self.determine_magnitude_cuts(completeness_cut = comp_cut)
+        
+            print("Using stars between K = "+str(klo)+" and "+str(kup))
+    
+            self.allblue = 0
+            self.n_blue = 0
+            poly = self.all_poly
+            self.find_stars_in_contour(poly,self.nir_survey)
+            self.nmin,self.nmean,self.nmax = self.count_blue_stars_in_contour(
+                                            self.completeness,
+                                            blue_cut=blue_cut,
+                                            kupperlim = kup,
+                                            klowerlim = klo,
+                                            ph_qual = False,
+                                            catalog=self.catalog,
+                                            plot=True,
+                                            survey=self.nir_survey)
+            print("Total area is...")
+            print(self.total_poly_area)
+            print("arcminutes")
+            self.model_data = self.load_besancon() #Read in the Besancon model
+            self.density = self.nmean/self.total_poly_area
+            self.density_lowerlim = self.nmin/self.total_poly_area
+            self.density_upperlim = self.nmax/self.total_poly_area
+            print(self.density)
+            print(self.density_upperlim)
+            print(self.density_lowerlim)
+            distance,upper,lower = self.get_distance(kup,klo,blue_cut,diffuse=diffuse)
+            print("==== Distance Results ====")
+            print(distance)
+            print(lower)
+            print(upper)
+            print("==========================")
+            self.distance_est = distance
+            self.distance_lolim = lower
+            self.distance_hilim = upper
             
-            #klo,kup = self.determine_magnitude_cuts(completeness_cut = comp_cut)
-        
-                print("Using stars between K = "+str(klo)+" and "+str(kup))
-        
-                self.allblue = 0
-                self.n_blue = 0
-                poly = self.all_poly
-                self.find_stars_in_contour(poly,self.nir_survey)
-                self.nmin,self.nmean,self.nmax = self.count_blue_stars_in_contour(
-                                                self.completeness,
-                                                blue_cut=blue_cut,
-                                                kupperlim = kup,
-                                                klowerlim = klo,
-                                                ph_qual = False,
-                                                catalog=self.catalog,
-                                                plot=True,
-                                                survey=self.nir_survey)
-                print("Total area is...")
-                print(self.total_poly_area)
-                print("arcminutes")
-                self.model_data = self.load_besancon() #Read in the Besancon model
-                self.density = self.nmean/self.total_poly_area
-                self.density_lowerlim = self.nmin/self.total_poly_area
-                self.density_upperlim = self.nmax/self.total_poly_area
-                print(self.density)
-                print(self.density_upperlim)
-                print(self.density_lowerlim)
-                d,upp,low = self.get_distance(kup,klo,blue_cut,diffuse=diffuse)
-                #print(d)
-                distance = d
-                upper = upp
-                lower = low
-                print("==== Distance Results ====")
-                print(distance)
-                print(lower)
-                print(upper)
-                print("==========================")
-                self.distance_est = distance
-                self.distance_lolim = lower
-                self.distance_hilim = upper
-                results = {"name":self.name,"glon":self.glon,"glat":self.glat,
-                           "area":self.contour_area,"n_obs_blue":self.n_blue,
-                           "n_est_blue":self.allblue,"dist":self.distance_est,
-                           "dist_lolim":self.distance_lolim,"dist_hilim":self.distance_hilim,
-                           "klo":klo, "kup":kup, "kcorr":self.kcorr}
-                f = open(os.path.join(self.name+"_data/",self.name+"_results_k"+str(kup)+".pkl"),'w')
-                pickle.dump(results,f)
-                f.close()
-                distance_estimates.append(self.distance_est)
-                lower_error.append(lower)
-                higher_error.append(upper)
+            results = {"name":self.name,"glon":self.glon,"glat":self.glat,
+                       "area":self.contour_area,"n_obs_blue":self.n_blue,
+                       "n_est_blue":self.allblue,"dist":self.distance_est,
+                       "dist_lolim":self.distance_lolim,"dist_hilim":self.distance_hilim,
+                       "klo":klo, "kup":kup, "kcorr":self.kcorr}
+            f = open(os.path.join(self.name+"_data/",self.name+"_results_k"+str(kup)+".pkl"),'w')
+            pickle.dump(results,f)
+            f.close()
+            distance_estimates.append(self.distance_est)
+            lower_error.append(lower)
+            higher_error.append(upper)
                 
-        if (len(distance_estimates) > 1):
-            drange = np.ptp(distance_estimates)
-            sigma = drange/4.
-            self.distance_est = np.median(distance_estimates)
-            lower_min = np.min(lower_error)
-            upper_min = np.min(higher_error)
-            if sigma < lower_min:
-                lowerlim = lower_min
-            else:
-                lowerlim = sigma
-            if sigma < upper_min:
-                upperlim = upper_min
-            else:
-                upperlim = sigma
-            
-            self.distance_lolim = lowerlim
-            self.distance_hilim = upperlim
+        #if (len(distance_estimates) > 0):
+        #    drange = np.ptp(distance_estimates)
+        #    sigma = drange/4.
+        #    self.distance_est = np.median(distance_estimates)
+        #    lower_min = np.min(lower_error)
+        #    upper_min = np.min(higher_error)
+        #    if (sigma < lower_min) or (lower_min == 0.0):
+        #        lowerlim = lower_min
+        #    else:
+        #        lowerlim = sigma
+        #    if sigma < upper_min or (upper_min == 0.0):
+        #        upperlim = upper_min
+        #    else:
+        #        upperlim = sigma
+        #    
+        #    self.distance_lolim = lowerlim
+        #    self.distance_hilim = upperlim
 
-        else:
-            pass #just use the most recent value. Should rarely happen
+        #else:
+        #    pass #just use the most recent value. Should rarely(?) or never happen
+        self.distance_est = np.median(distance_estimates)
+        self.distance_lolim = np.median(lower_error)
+        self.distance_hilim = np.median(higher_error)
+
         
         results = {"name":self.name,"glon":self.glon,"glat":self.glat,
                    "area":self.contour_area,"n_obs_blue":self.n_blue,
@@ -591,6 +604,9 @@ class BaseDistObj():
                    "dist_lolim":self.distance_lolim,"dist_hilim":self.distance_hilim,
                    "klo":klo, "kup":kup, "kcorr":self.kcorr}
         print(results)
+        f = open(os.path.join(self.name+"_data/",self.name+"_results.pkl"),'w')
+        pickle.dump(results,f)
+        f.close()
         return(results)
         
     
@@ -756,19 +772,36 @@ class BaseDistObj():
         center2 = np.where(yy > self.density)
 
         central = center1[0][-1]
+        print("Maximum density probed = ")
+        max_density = yy[-1]
+        print(max_density)
+        #central = np.max(central,yy[-1])
+        print("Maximum distance probed = ")
+        max_dist = np.where(yy < 0.99*max_density)
+        max_distance = max_dist[0][-1]
+        print(max_distance)
     
+        no_upper = False
+        no_lower = False
+        no_center = False
     
         try:
             upperlim = upper[0][0]
         except IndexError:
             print("Failed to find upper distance limit")
-            upperlim = (max_distance-central)/1000.
+            upperlim = -999
+            no_upper = True
         try:
             lowerlim = lower[0][-1]
         except IndexError:
             print("Failed to find lower distance limit")
-            lowerlim = 0.
-
+            lowerlim = -999
+            no_lower = True
+            
+        print(central)
+        if central > max_distance:
+            central = max_distance
+            no_center = True
 
         pylab.axhline(y=self.density,linewidth=2,color='k')
         pylab.axhline(y=self.density_upperlim,color='k',linestyle=':')
@@ -778,24 +811,41 @@ class BaseDistObj():
         pylab.axvline(x=upperlim,color='k',linestyle=':')
         pylab.axvline(x=central,color='k',linewidth=2)
         pylab.figtext(0.15,0.8,self.name,ha="left",fontsize='large',backgroundcolor="white")
-        upper = str(upperlim-central)
-        lower = str(lowerlim-central)
 
-        pylab.figtext(0.15,0.75,str(central)+r"$_{"+lower+r"}$"+r"$^{+"+upper+r"}$"+" pc",fontsize='large',backgroundcolor="white")
+        if no_lower and no_center and no_upper:
+            #Lower limit set at max distance probed
+            merr = 0.0
+            perr = 0.0
+            central = max_distance
+        elif no_center and no_upper:
+            #Lower limit set by (found) lower limit
+            central = lowerlim
+            merr = 0.0
+            perr = 0.0
+        elif no_upper:
+            #Upper limit undefined
+            central = central
+            perr = 0.0
+            merr = lowerlim-central
+        else:
+            central = central
+            perr = upperlim - central
+            merr = lowerlim-central
+
+        pylab.figtext(0.15,0.75,str(central)+r"$_{"+str(merr)+r"}$"+r"$^{+"+str(perr)+r"}$"+" pc",fontsize='large',backgroundcolor="white")
         pylab.figtext(0.15,0.70,r'Area = '+str(round(self.total_poly_area,2))+' arcmin$^2$',ha="left",fontsize='large',backgroundcolor="white")
         pylab.figtext(0.15,0.65,"Survey: "+self.nir_survey,ha="left",fontsize='large',backgroundcolor="white")
 
+        pylab.xlim(0,10000)
         fig = pylab.gcf()
         fig.set_size_inches(6,6)
         Size = fig.get_size_inches()
-        print("Size in Inches: "+str(Size))
+        #print("Size in Inches: "+str(Size))
         pylab.savefig(os.path.join(self.name+"_data",self.name+"_Distance_"+self.nir_survey+"_k"+str(kupperlim)+'.png'))
         pylab.clf()
         pylab.close('all')
 
-        print("Distance = "+str(central)+"+"+str(upperlim-central)+str(lowerlim-central))
-        perr = upperlim-central
-        merr = central-lowerlim
+        print("Distance = "+str(central)+"+"+str(perr)+str(merr))
         return(central,perr,merr)
         
 class NoContourException(Exception):
