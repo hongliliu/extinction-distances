@@ -682,7 +682,17 @@ class BaseDistObj():
 
         f = interp1d(completeness[...,0],completeness[...,1],kind='linear')
 
-        good = catalog[(catalog['KMag'] < kupperlim) & (catalog['KMag'] > klowerlim)]
+        print(kupperlim)
+        print(klowerlim)
+        print(catalog['KMag'])
+        print(catalog) #Apparently this print statement is necessary to make the selection of good rows
+                       #in the next few lines work. That is super broken and bad of astropy.table
+
+        good_rows = np.logical_and(catalog['KMag'] < kupperlim,catalog['KMag'] > klowerlim)
+        print(good_rows)
+        
+        good = catalog[good_rows]
+        #good = catalog[(catalog['KMag'] < kupperlim) & (catalog['KMag'] > klowerlim)]
         in_contour = good[good['CloudMask'] == 1]
         JminK = in_contour['JMag'] - in_contour['KMag']
         blue_in_contour = in_contour[JminK < blue_cut]
@@ -743,6 +753,8 @@ class BaseDistObj():
         Mags_per_kpc = diffuse
         
         foreground = self.model_data[self.model_data['Dist'] <= max_distance/1000.]
+        print(foreground)
+        #Now, all of a sudden, Besancon does not return J-K?
         foreground['corrj'] = foreground['J-K']+foreground['K'] + Mags_per_kpc*0.276*foreground['Dist']
         foreground['corrk'] = foreground['K'] + Mags_per_kpc*0.114*foreground['Dist']
 
