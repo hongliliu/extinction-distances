@@ -235,6 +235,8 @@ class BaseDistObj():
         """
         
         from astroquery import besancon
+        import copy
+        import besancon_parameters as bp
         
         if (not os.path.isfile(self.model)) or clobber:
             print("Fetching Besancon model from server...")
@@ -246,7 +248,8 @@ class BaseDistObj():
                                             extinction = 0.0,
                                             verbose = True,
                                             retrieve_file=True,
-                                            rsup=10.)
+                                            rsup=10.,
+                                            colind=["J-H","H-K","J-K","V-K",],)
             besancon_model.write(self.model,format="fits")
         else:
             print("Besancon model already downloaded. Use clobber=True to fetch new versions.")
@@ -417,8 +420,11 @@ class BaseDistObj():
         g1,g2 = zscale.zscale(h)
         j = fits.getdata(self.jim)
         b1,b2 = zscale.zscale(j)
-        
         aplpy.make_rgb_image(self.rgbcube,self.rgbpng,
+                             #G337 hand-coded
+                             #vmin_r = 5671., vmax_r = 5952.,
+                             #vmin_g = 8117., vmax_g = 8688.,
+                             #vmin_b = 1462., vmax_b = 1606.)
                              vmin_r = r1, vmax_r = r2,
                              vmin_g = g1, vmax_g = g2,
                              vmin_b = b1, vmax_b = b2)
@@ -755,6 +761,9 @@ class BaseDistObj():
         foreground = self.model_data[self.model_data['Dist'] <= max_distance/1000.]
         print(foreground)
         #Now, all of a sudden, Besancon does not return J-K?
+        #Because I was using a custom set of keyword defaults. Set these manually inside the program
+        #Just need to compare current defaults to my custom ones (on Kuon) to see what needs to be updated
+        foreground['K'] = foreground['V'] - foreground['V-K']
         foreground['corrj'] = foreground['J-K']+foreground['K'] + Mags_per_kpc*0.276*foreground['Dist']
         foreground['corrk'] = foreground['K'] + Mags_per_kpc*0.114*foreground['Dist']
 
