@@ -52,3 +52,15 @@ distance estimate.
 
     cloud.do_distance_estimate()
 
+Note
+----
+
+Currently I have not figured out how to get the appropriate Besancon model 
+output using astroquery. It is possible to change the defaults in 
+astroquery/besancon/core.py to include 
+
+    'colind':["J-H","H-K","J-K","V-K",],
+    
+which should be eminently possible to add into the query string, I just 
+can't make it work. Therefore, currently one needs to modify the local 
+verison of astroquery to make these sripts work.
