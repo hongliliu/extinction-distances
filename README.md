@@ -3,6 +3,13 @@ extinction-distances
 
 Code to implement the blue star number count method from Foster et al. (2012) http://adsabs.harvard.edu/abs/2012ApJ...751..157F
 
+This code requires a modified version of the astroquery package. You will need 
+to download and install my fork of the astroquery package from 
+https://github.com/jfoster17/astroquery. This branch has two main differences 
+from the official branch -- (1) it adds a VISTA module which has the same interface 
+as the UKIDSS module (2) it updates the default columns returned from a 
+Besancon query, since I could not get that working without changing the defaults.
+
 All the work is done inside the BaseDistObj. An example run for a single cloud 
 would be as follows:
 
@@ -51,16 +58,3 @@ diagnostic plots should be checked before blindly believing any
 distance estimate.
 
     cloud.do_distance_estimate()
-
-Note
-----
-
-Currently I have not figured out how to get the appropriate Besancon model 
-output using astroquery. It is possible to change the defaults in 
-astroquery/besancon/core.py to include 
-
-    'colind':["J-H","H-K","J-K","V-K",],
-    
-which should be eminently possible to add into the query string, I just 
-can't make it work. Therefore, currently one needs to modify the local 
-verison of astroquery to make these sripts work.
