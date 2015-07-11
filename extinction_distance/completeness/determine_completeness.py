@@ -47,14 +47,14 @@ from astropy.io import fits
 from astropy import wcs
 from astropy import coordinates
 from astropy import units as u
+from astropy.table import Table
 import math
-import matplotlib.nxutils as nx
-import extinction_distance.support.coord as coord#This is an old slow version, but has no compat problems
-import atpy
-import montage
+from matplotlib.path import Path
+import montage_wrapper as montage
 import pickle
-import pylab
-import determine_ukidss_zp
+import determine_zp
+import extinction_distance.support.pyspherematch as pyspherematch #Better version
+
 
 flag_limit = 4
 
@@ -69,10 +69,17 @@ def main():
 def do_setup(source,survey="UKIDSS"):
     sex = sextractor.SExtractor()
     if survey == "UKIDSS":
+    #http://www.jach.hawaii.edu/UKIRT/instruments/wfcam/user_guide/science_arrays.html
         sex.config['GAIN'] = 4.5
         sex.config['SATUR_LEVEL'] = 40000.0
         sex.config['MAG_ZEROPOINT'] = 25 #sex.Kzptalt
         sex.config['PHOT_APERTURES'] = 5 #sex.Kzptalt
+    elif survey == "VISTA":
+    #http://casu.ast.cam.ac.uk/surveys-projects/vista/technical/
+        sex.config['GAIN'] = 4.19 
+        sex.config['SATUR_LEVEL'] = 42000.0
+        sex.config['MAG_ZEROPOINT'] = 24.
+        sex.config['PHOT_APERTURES'] = 5.
 
     sex.config['PIXEL_SCALE'] = 0
     sex.config['CHECKIMAGE_TYPE'] = 'NONE'
@@ -89,7 +96,7 @@ def do_phot(sex,source,survey="UKIDSS"):
 
     print("Doing H photometry...")
 
-    sex.run(os.path.join(source+"_data",source+"_"+survey+"_trim_H.fits"))
+    sex.run(os.path.join(source+"_data",source+"_"+survey+"_H.fits"))
     #print(os.path.join(source+"_data",source+"_"+survey+"_trim_H.fits"))
     #Hcatalog = sex.catalog("py-sextractor.cat")
     Hcatalog = sex.catalog()
@@ -97,79 +104,61 @@ def do_phot(sex,source,survey="UKIDSS"):
 
     print("Doing K photometry...")
 
-    sex.run(os.path.join(source+"_data",source+"_"+survey+"_trim_K.fits"))
+    sex.run(os.path.join(source+"_data",source+"_"+survey+"_K.fits"))
     Kcatalog = sex.catalog()
     try:
-        k_correct = determine_ukidss_zp.calibrate(source,"K_1")
-    except IndexError:
+        k_correct = determine_zp.calibrate(source,"K_1",survey="2MASS")
+    except ValueError:
         print("Failed to calibrate, assuming no correction")
         k_correct = 0
 
     if ((k_correct > 0.5) or (k_correct < -0.5)):
-        print("*** Large k-correction ("+k_correct+")***")
+        print("*** Large ZP correction for K ("+str(k_correct)+") ***")
         print("Completeness for "+source+" likely wrong")
 
     print("Doing J photometry...")
-    sex.run(os.path.join(source+"_data",source+"_"+survey+"_trim_J.fits"))
+    sex.run(os.path.join(source+"_data",source+"_"+survey+"_J.fits"))
     Jcatalog = sex.catalog()
     try:
-        j_correct = determine_ukidss_zp.calibrate(source,"J")
+        j_correct = determine_zp.calibrate(source,"J",survey="2MASS")
     except IndexError:
         print("Failed to calibrate, assuming no correction")
-        k_correct = 0
+        j_correct = 0
 
-
-    Kalpha = []
-    Kdelta = []
-    #
-    for star in Kcatalog:
-        Kalpha.append(star['ALPHA_J2000'])
-        Kdelta.append(star['DELTA_J2000'])
-    #
-    Jalpha = []
-    Jdelta = []
-    for star in Jcatalog:
-        Jalpha.append(star['ALPHA_J2000'])
-        Jdelta.append(star['DELTA_J2000'])
-    #
-    blah = coord.match(np.array(Kalpha),np.array(Kdelta),np.array(Jalpha),
-                                            np.array(Jdelta),0.3,seps=False)
-    ra = []
-    dec = []
-    Jmag = []
-    Kmag = []
-    L = []
-    B = []
-
-    for i,j in enumerate(blah):
-        if j != -1:
-            if ((Kcatalog[i]['FLAGS'] < flag_limit) and (Jcatalog[int(j)]['FLAGS'] < flag_limit)):
-                ra.append(Kcatalog[i]['ALPHA_J2000'])
-                dec.append(Kcatalog[i]['DELTA_J2000'])
-                Kmag.append(Kcatalog[i]['MAG_APER']-k_correct)
-
-                Jmag.append(Jcatalog[int(j)]['MAG_APER']-j_correct)
-                gc = coordinates.ICRSCoordinates(Kcatalog[i]['ALPHA_J2000'],Kcatalog[i]['DELTA_J2000'], unit=(u.degree, u.degree))
-                galcoords = gc.galactic
-                L.append(galcoords.l.degrees)
-                B.append(galcoords.b.degrees)
-
-    #print(Kmag)
-    t = atpy.Table()
-    t.add_column('RA',ra)
-    t.add_column('Dec',dec)
-    t.add_column('L',L)
-    t.add_column('B',B)
-
-    t.add_column('JMag',Jmag)
-    t.add_column('KMag',Kmag)
-    #t.describe()
+    Kcatalog = Table(Kcatalog)
+    Jcatalog = Table(Jcatalog)
+    
+    Kcatalog = Kcatalog[(Kcatalog['FLAGS'] < flag_limit)]
+    Jcatalog = Jcatalog[(Jcatalog['FLAGS'] < flag_limit)]
+    
+    #print(Kcatalog)
+    idxs1, idxs2, ds = pyspherematch.spherematch(np.array(Kcatalog['ALPHA_J2000']),
+                                                 np.array(Kcatalog['DELTA_J2000']),
+                                                 np.array(Jcatalog['ALPHA_J2000']),
+                                                 np.array(Jcatalog['DELTA_J2000']),tol=1./3600.)
+    
+    Kcatalog['MAG_APER'] -= k_correct
+    Jcatalog['MAG_APER'] -= j_correct
+    ra  = Kcatalog[idxs1]['ALPHA_J2000']
+    dec = Kcatalog[idxs1]['DELTA_J2000']
+    
+    gc = coordinates.ICRS(ra,dec, unit=(u.degree, u.degree))
+    galcoords = gc.galactic
+    L = galcoords.l.degree
+    B = galcoords.b.degree
+    
+    Jmag = Jcatalog[idxs2]['MAG_APER']
+    Kmag = Kcatalog[idxs1]['MAG_APER']
+    JminK = Jmag - Kmag
+    
+    #print(JminK)
+    t = Table([ra,dec,L,B,Jmag,Kmag,JminK],names=('RA','Dec','L','B','JMag','KMag','JminK'))
 
     try:
         os.remove(os.path.join(source+"_data",source+"_MyCatalog_"+survey+".vot"))
     except:
         pass
-    t.write(os.path.join(source+"_data",source+"_MyCatalog_"+survey+".vot"))
+    t.write(os.path.join(source+"_data",source+"_MyCatalog_"+survey+".vot"),format='votable')
 
     catlist = [Kcatalog,Hcatalog,Jcatalog]
     filterlist = ["K","H","J"]
@@ -188,33 +177,40 @@ def do_phot(sex,source,survey="UKIDSS"):
             mag.append(star['MAG_APER'])
             magerr.append(star['MAGERR_APER'])
             flags.append(star['FLAGS'])
-        t = atpy.Table()
+        t = Table([ra,dec,mag,magerr,flags],names=('RA','Dec','Mag'+filtername,'MagErr'+filtername,'Flags'+filtername))
 
-        #print(cat['ALPHA_J2000'])
-        t.add_column('RA',ra)
-        t.add_column('Dec',dec)
-        t.add_column('Mag'+filtername,mag)
-        t.add_column('MagErr'+filtername,magerr)
-        t.add_column('Flags'+filtername,flags)
-        #if filtername=="J":
-        #       print(np.average(mag))
         try:
             os.remove(os.path.join(source+"_data",source+"_MyCatalog_"+survey+"_"+filtername+".vot"))
         except:
             pass
-        t.write(os.path.join(source+"_data",source+"_MyCatalog_"+survey+"_"+filtername+".vot"))
+        t.write(os.path.join(source+"_data",source+"_MyCatalog_"+survey+"_"+filtername+".vot"),format='votable')
 
 
     sex.clean(config=True,catalog=True,check=True)
+    
+    f = open(os.path.join(source+"_data/",source+"_zpcorr_"+survey+".pkl"),'w')
+    pickle.dump(k_correct,f)
+    f.close()
+    
     return(k_correct)
 
 
 
-def do_completeness(sex,source,survey="UKIDSS",k_corr = 0,numtrials=50):
+def do_completeness(sex,source,contours,survey="UKIDSS",k_corr = 0,numtrials=50):
+    print("Running completeness...")
+    #print(survey)
     if survey == "UKIDSS":
         mags = [11,12,13,14,15,16,17,18,19]
         percent = {11:[],12:[],13:[],14:[],15:[],16:[],17:[],18:[],19:[]}
         zp = 25+k_corr
+    if survey == "VISTA":
+        mags = [11,12,13,14,15,16,17,18,19]
+        percent = {11:[],12:[],13:[],14:[],15:[],16:[],17:[],18:[],19:[]}
+        
+        #mags = [11,19]
+        #percent = {11:[],19:[]}
+        
+        zp = 24.+k_corr
     if survey == "2MASS":
         #2MASS should be fine down to ~5-6
         mags = [7,8,9,10,11,12,13,14,15]
@@ -223,18 +219,22 @@ def do_completeness(sex,source,survey="UKIDSS",k_corr = 0,numtrials=50):
 
     recovery = np.zeros((numtrials,len(mags)))
     for c in range(numtrials):
-        d,h = fits.getdata(os.path.join(source+"_data",source+"_"+survey+"_trim_K.fits"),header=True)
+        if c % 10 == 0:
+            print("Starting run #"+str(c))
+            #print(recovery)
+        d,h = fits.getdata(os.path.join(source+"_data",source+"_"+survey+"_K.fits"),header=True)
         w = wcs.WCS(h)
-        all_poly = parse_ds9_regions(os.path.join(source+"_data",source+".reg"))
+        #all_poly = parse_ds9_regions(os.path.join(source+"_data",source+".reg"))
+        all_poly = contours
         fake_stars = insert_fake_stars(d,h,mags,all_poly,w,sex,survey=survey,zp=zp)
         #Recover returns an array of [1,1,1,0,0,0,1,0,0,1]
         r = recover(fake_stars,sex)
-        recovery[c:] = r
+        recovery[c,:] = r
+        #print(recovery.shape)
     sex.clean(config=True,catalog=True,check=True)
 
-    #print(recovery)
     print(mags)
-    #print(recovery.sum(axis=0)/numtrials)
+    print(recovery.sum(axis=0)/numtrials)
     comp = recovery.sum(axis=0)/numtrials
     print(comp)
     f = open(os.path.join(source+"_data/",source+"_completeness_"+survey+".pkl"),'w')
@@ -248,39 +248,51 @@ def insert_fake_stars(d,h,mags,all_poly,WCS,sex,survey="UKIDSS",zp=25.):
     ysize = h['NAXIS2']
     #Insert fake star
     if survey== "UKIDSS":
-        size = 5
+        size = 11
+        sigma = 2.5/2.35
+    if survey== "VISTA":
+        size = 11
+        sigma = 2.5/2.35 #FWHM ~ 2.5 pixels
     if survey == "2MASS":
         size = 5
 
     for mag in mags:
         flag_in = False
         while flag_in == False:
-            for poly in all_poly:
-                verts = np.array(poly,float)
-                x = np.random.random_sample()*(xsize-size-6)+(size)
-                y = np.random.random_sample()*(ysize-size-6)+(size)
-                #print(WCS)
-                #print(x,y)
+            poly = all_poly #We now only have one contour
+            #for poly in all_poly:
+            #print(poly)
+            verts = np.array(poly,float)
+            #print(verts)
+            x = np.random.random_sample()*(xsize-size-6)+(size)
+            y = np.random.random_sample()*(ysize-size-6)+(size)
+            #print(WCS)
+            #print(x,y)
 
-                pixcrd  = np.array([[x,y]], np.float_)
-                radec = np.array(WCS.wcs_pix2world(pixcrd,0))
-                #print(radec)
+            pixcrd  = np.array([[x,y]], np.float_)
+            radec = np.array(WCS.wcs_pix2world(pixcrd,0))
+            #print(radec)
 
-                gc = coordinates.ICRSCoordinates(radec[0][0],radec[0][1], unit=(u.degree, u.degree))
-                galcoords = gc.galactic
-                #L.append(galcoords.l.degrees)
-                #B.append(galcoords.b.degrees)
-                yo = nx.pnpoly(galcoords.l.degrees,galcoords.b.degrees,verts)
-                if yo == 1:
-                #print(te)
-                #print("is in")
-                    flag_in = True
+            gc = coordinates.ICRS(radec[0][0],radec[0][1], unit=(u.degree, u.degree))
+            galcoords = gc.galactic
+            #L.append(galcoords.l.degrees)
+            #B.append(galcoords.b.degrees)
+            path = Path(verts)
+            yo = path.contains_point((galcoords.l.degree,galcoords.b.degree))
+            #yo = nx.pnpoly(galcoords.l.degrees,galcoords.b.degrees,verts)
+            if yo == 1:
+            #print(te)
+                #print("a star is in the contour")
+                flag_in = True
+            else:
+                pass
+                #print("a star is outside the contour")
         magnitude = mag
         #zp = sex.config['MAG_ZEROPOINT']
         #Now we pass in zp instead
         expfactor = (magnitude - zp)/(-2.5)
         counts = math.pow(10.,expfactor)
-        g = gauss_kern(size,counts) #5 is rough guess for FWHM
+        g = gauss_kern(size,sigma,counts) #5 is rough guess for FWHM
     #       print d[y-size:y+size+1,x-size:x+size+1].size
     #       print g.size
         d[y-size:y+size+1,x-size:x+size+1] += g #Damn backward numpy arrays
@@ -289,6 +301,11 @@ def insert_fake_stars(d,h,mags,all_poly,WCS,sex,survey="UKIDSS",zp=25.):
     return(fake_stars)
 
 def insert_fake_star(d,h,mag):
+    """
+    Currently this function is NOT used
+    
+    """
+    
     xsize = h['NAXIS1']
     ysize = h['NAXIS2']
     #Insert fake star
@@ -303,7 +320,7 @@ def insert_fake_star(d,h,mag):
     zp = 25.
     expfactor = (magnitude - zp)/(-2.5)
     counts = math.pow(10.,expfactor)
-    print(counts)
+    #print(counts)
     g = gauss_kern(size,counts) #5 is rough guess for FWHM
     d[y-size:y+size+1,x-size:x+size+1] += g #Damn backward numpy arrays
 
@@ -313,8 +330,8 @@ def insert_fake_star(d,h,mag):
 def recover(properties,sex):
     sex.run("TestOuput.fits")
     catalog = sex.catalog()
-    ptol = 1
-    mtol = 1.5
+    ptol = 1.
+    mtol = 2.0
     found = np.zeros(len(properties))
     for star in catalog:
         #print(star['X_IMAGE'],star['Y_IMAGE'],star['MAG_APER'])
@@ -331,10 +348,15 @@ def recover(properties,sex):
     #else:
     #       print("Not Found")
     #print(found)
+    #if found[0] == 0:
+    #    for prop in properties:
+    #        print(prop)
+    #    raise(IOError)
     return(found)
+    
 #       catalog = sex.catalog()
 
-def gauss_kern(size, flux, sizey=None):
+def gauss_kern(size, sigma, flux, sizey=None):
     """ Returns a 2D gauss kernel array as a fake star """
     size = int(size)
     if not sizey:
@@ -342,7 +364,7 @@ def gauss_kern(size, flux, sizey=None):
     else:
         sizey = int(sizey)
     x, y = np.mgrid[-size:size+1, -sizey:sizey+1]
-    g = np.exp(-(x**2/float(size)+y**2/float(sizey)))
+    g = np.exp(-(x**2/float(2*sigma**2)+y**2/float(2*sigma**2)))
     normfactor = g.sum()/flux
     return g / normfactor
 

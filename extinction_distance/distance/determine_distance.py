@@ -18,35 +18,44 @@ cloud_av = 14. #This is 72*0.2 -- i.e. a BGPS flux of 0.2 Jy/beam
 cloud_ak = cloud_av*0.114 #Conversion to A_K, check this
 
 
+
 def do_besancon_estimate(model_data,kupperlim,klowerlim,colorcut,cloud,upperdensity,lowerdensity,centraldensity,survey):
     """We assume that all model files are of the same size -- 0.04 sq degree"""
     blue_star_density_model = []
     diffuse_model = model_data
-    cloud_distances = np.arange(0,8000,50) #Possible cloud distances in pc
+    cloud_distances = np.arange(0,10000,50) #Possible cloud distances in pc
 
 
     Mags_per_kpc = 0.7
 
     for cloud_distance in cloud_distances:
-        temp_model = copy.deepcopy(diffuse_model)
+        #print(cloud_distance)
+        #temp_model = copy.deepcopy(diffuse_model)
         #temp_model = read_besancon(model_file)
+        temp_model=diffuse_model
 
-        foreground = temp_model.where((temp_model['Dist'] <= cloud_distance/1000.))
-
-        try:
-            foreground.add_column('corrj',foreground['J-K']+foreground['K'] + Mags_per_kpc*0.276*foreground['Dist'])
-            foreground.add_column('corrk',foreground['K'] + Mags_per_kpc*0.114*foreground['Dist'])
-        except ValueError:
-            #Some model files don't have K, but do have V and V-K
-            foreground.add_column('corrj',foreground['J-K']+(foreground['V']-foreground['V-K']) + Mags_per_kpc*0.276*foreground['Dist'])
-            foreground.add_column('corrk',(foreground['V']-foreground['V-K']) + Mags_per_kpc*0.114*foreground['Dist'])
+        foreground = temp_model[temp_model['Dist'] <= cloud_distance/1000.]
+        #print(foreground)
+        #try:
+        foreground['corrj'] = foreground['J-K']+foreground['K'] + Mags_per_kpc*0.276*foreground['Dist']
+        foreground['corrk'] = foreground['K'] + Mags_per_kpc*0.114*foreground['Dist']
+        #except ValueError:
+        #    #Some model files don't have K, but do have V and V-K
+        #    foreground.add_column('corrj',foreground['J-K']+(foreground['V']-foreground['V-K']) + Mags_per_kpc*0.276*foreground['Dist'])
+        #    foreground.add_column('corrk',(foreground['V']-foreground['V-K']) + Mags_per_kpc*0.114*foreground['Dist'])
 
         J_min_K = foreground[(foreground['corrk'] < kupperlim) & (foreground['corrk'] > klowerlim) & (foreground['corrj']-foreground['corrk'] < colorcut)]
-        #The 25/3600. takes us to per square arcmin
+        #The 25/3600. takes us to per square arcmin for a field of 0.04 sq degree
+        #print("At a distance of ")
+        #print(cloud_distance)
+        #print("We have ")
+        #print(str(len(J_min_K)*(25/3600.)))
+        #print("blue stars per arcminute?")
         blue_star_density_model.append(len(J_min_K)*(25/3600.)) #Old X.sum() notation DOES NOT WORK!!
 
     blah = smooth(np.array(blue_star_density_model),window_len=9,window='hanning')
     #pylab.figure(figsize=(4,4))
+    pylab.clf()
     pylab.plot(cloud_distances,blah,label="Besancon",color='k',ls='--')
     pylab.xlabel("Distance [pc]")
     pylab.ylabel("Number of Blue Stars/(sq. arcmin)")
@@ -93,7 +102,7 @@ def do_besancon_estimate(model_data,kupperlim,klowerlim,colorcut,cloud,upperdens
     fig.set_size_inches(6,6)
     Size = fig.get_size_inches()
     print("Size in Inches: "+str(Size))
-    pylab.savefig(os.path.join(cloud.name+"_data",cloud.name+"_Distance_"+survey+'.pdf'))
+    pylab.savefig(os.path.join(cloud.name+"_data",cloud.name+"_Distance_"+survey+'.png'))
     pylab.clf()
 
     print("Distance = "+str(central)+"+"+str(upperlim-central)+str(lowerlim-central))
